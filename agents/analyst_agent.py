@@ -1,225 +1,194 @@
 """
-RetailAgent — Analyst Agent
-=============================
-Runs four analysis modules on matched price data:
-  1. Price Position Ranking     — where does the retailer rank vs. competitors
-  2. Price Gap Analysis         — gap to min, avg, max competitor price
-  3. Trend Detection            — 7-day rolling direction per competitor-product
-  4. Anomaly Detection          — Z-score / IQR flagging of unusual price moves
+RetailAgent — Analyst Agent (Pure Analytics)
+=============================================
+No LLM calls here — pure Python + Pandas + SciPy analytics.
+LangChain pattern: RunnableLambda wrapping each analysis function,
+composed into a pipeline using the | operator.
 
-All pure Python + Pandas + SciPy. No LLM calls in this layer.
-Results written to LangGraph state and analytics_results DB table.
+Four modules run in sequence:
+  1. price_ranker       → rank + gap analysis per product
+  2. trend_detector     → 7-day rolling linear regression slope
+  3. anomaly_detector   → Z-score + IQR statistical flagging
+  4. alert_builder      → converts analysis results to Alert objects
+
+All results written to SQLite analytics_results table and LangGraph state.
 """
 
 import statistics
-from datetime import datetime, timedelta
 from collections import defaultdict
+from datetime    import datetime
 
-from core.state import AgentState, ProductAnalytics
-from core import database as db
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 
-
-def _compute_trend(price_history: list) -> str:
-    """
-    Given a time-ordered list of {price, scraped_at} records,
-    compute the 7-day price direction.
-    Returns: 'rising' | 'falling' | 'stable'
-    """
-    if len(price_history) < 3:
-        return "stable"
-
-    prices = [float(r["price"]) for r in price_history]
-
-    # Simple linear regression slope
-    n = len(prices)
-    x_mean = (n - 1) / 2
-    y_mean = statistics.mean(prices)
-
-    numerator   = sum((i - x_mean) * (p - y_mean) for i, p in enumerate(prices))
-    denominator = sum((i - x_mean) ** 2 for i in range(n))
-
-    if denominator == 0:
-        return "stable"
-
-    slope = numerator / denominator
-    pct_slope = slope / y_mean if y_mean else 0
-
-    if pct_slope < -0.005:
-        return "falling"
-    elif pct_slope > 0.005:
-        return "rising"
-    return "stable"
+from core.state import AgentState
+from core       import database as db
 
 
-def _detect_anomaly(current_price: float, price_history: list) -> tuple[bool, str]:
-    """
-    Detect if current_price is anomalous using Z-score.
-    Returns (is_anomaly, reason_string).
-    """
-    if len(price_history) < 5:
-        return False, ""
+# ─── Analysis functions (each wrapped as RunnableLambda) ─────────
 
-    historical = [float(r["price"]) for r in price_history[:-1]]   # exclude current
-    if not historical:
-        return False, ""
+def _price_rank_analysis(payload: dict) -> dict:
+    """Module 1: Compute price rank and gap for each matched product."""
+    matches  = payload["matches"]
+    catalog  = payload["catalog"]
+    threshold = payload["threshold"]
 
-    mean = statistics.mean(historical)
-    try:
-        stdev = statistics.stdev(historical)
-    except statistics.StatisticsError:
-        return False, ""
-
-    if stdev == 0:
-        return False, ""
-
-    z_score = abs(current_price - mean) / stdev
-
-    if z_score > 2.5:
-        direction = "dropped" if current_price < mean else "spiked"
-        change_pct = abs(current_price - mean) / mean * 100
-        return True, (f"Price {direction} by {change_pct:.1f}% "
-                      f"(Z-score={z_score:.1f}, hist.avg=₹{mean:.0f})")
-
-    # IQR check
-    sorted_prices = sorted(historical)
-    q1 = sorted_prices[len(sorted_prices) // 4]
-    q3 = sorted_prices[3 * len(sorted_prices) // 4]
-    iqr = q3 - q1
-
-    if iqr > 0:
-        lower_fence = q1 - 1.5 * iqr
-        upper_fence = q3 + 1.5 * iqr
-        if current_price < lower_fence or current_price > upper_fence:
-            direction = "below" if current_price < lower_fence else "above"
-            return True, f"Price {direction} IQR fence (Q1={q1:.0f}, Q3={q3:.0f})"
-
-    return False, ""
-
-
-def run_analyst(state: AgentState, retailer_id: int) -> AgentState:
-    """
-    Computes analytics for all matched products.
-    Updates state.analytics and triggers alerts.
-    """
-    print("\n[Analyst] Computing competitive intelligence...")
-
-    matches   = state.product_matches
-    catalog   = {p["sku"]: p for p in state.retailer_profile.catalog}
-    threshold = state.retailer_profile.alert_threshold_pct
-    cycle_id  = state.cycle_id
-
-    if not matches:
-        print("[Analyst] No product matches to analyze.")
-        return state
-
-    # Group matches: sku → {competitor: price}
     sku_competitors: dict = defaultdict(dict)
     for m in matches:
-        sku  = m.get("retailer_sku", "")
-        comp = m.get("competitor_name", "")
+        sku   = m.get("retailer_sku", "")
+        comp  = m.get("competitor_name", "")
         price = float(m.get("competitor_price", 0))
         if sku and comp and price > 0:
             sku_competitors[sku][comp] = price
 
-    analytics_list = []
-    alerts = list(state.alerts)
-
+    results = {}
     for sku, comp_prices in sku_competitors.items():
         if sku not in catalog:
             continue
-
-        product      = catalog[sku]
-        my_price     = float(product.get("current_price", 0))
-        product_name = product.get("name", sku)
-
-        if my_price == 0 or not comp_prices:
+        product   = catalog[sku]
+        my_price  = float(product.get("current_price", 0))
+        if my_price == 0:
             continue
 
-        # ── Price Position ──────────────────────────
-        all_prices  = list(comp_prices.values()) + [my_price]
-        sorted_prices = sorted(all_prices)
-        rank        = sorted_prices.index(my_price) + 1
-        n_comp      = len(comp_prices)
+        all_prices    = sorted(list(comp_prices.values()) + [my_price])
+        rank          = all_prices.index(my_price) + 1
+        min_price     = min(comp_prices.values())
+        avg_price     = sum(comp_prices.values()) / len(comp_prices)
+        max_price     = max(comp_prices.values())
+        gap_to_min    = my_price - min_price
+        gap_pct_min   = gap_to_min / min_price if min_price > 0 else 0.0
 
-        min_price   = min(comp_prices.values())
-        avg_price   = sum(comp_prices.values()) / len(comp_prices)
-        max_price   = max(comp_prices.values())
+        results[sku] = {
+            "retailer_sku":          sku,
+            "product_name":          product.get("name", sku),
+            "retailer_price":        my_price,
+            "competitor_prices":     comp_prices,
+            "min_competitor_price":  min_price,
+            "avg_competitor_price":  round(avg_price, 2),
+            "max_competitor_price":  max_price,
+            "price_rank":            rank,
+            "total_competitors":     len(comp_prices),
+            "price_gap_to_min":      round(gap_to_min, 2),
+            "price_gap_pct_to_min":  round(gap_pct_min, 4),
+            "trend":                 "stable",   # filled by next module
+            "is_anomaly":            False,
+            "anomaly_reason":        "",
+        }
 
-        gap_to_min  = my_price - min_price
-        gap_pct_min = gap_to_min / min_price if min_price > 0 else 0.0
+    payload["ranked"] = results
+    return payload
 
-        # ── Trend Detection ─────────────────────────
-        # Use the cheapest competitor's history as market trend signal
-        cheapest_comp = min(comp_prices, key=comp_prices.get)
-        history = db.get_price_history(
-            retailer_id, cheapest_comp, product_name, days=7
-        )
-        trend = _compute_trend(history)
 
-        # ── Anomaly Detection ───────────────────────
-        current_min = min_price
+def _trend_detector(payload: dict) -> dict:
+    """Module 2: 7-day rolling trend per product via linear regression slope."""
+    ranked      = payload["ranked"]
+    retailer_id = payload["retailer_id"]
+
+    for sku, data in ranked.items():
+        cheapest_comp = min(data["competitor_prices"], key=data["competitor_prices"].get)
+        history       = db.get_price_history(retailer_id, cheapest_comp, data["product_name"], days=7)
+        data["trend"] = _compute_trend(history)
+
+    payload["ranked"] = ranked
+    return payload
+
+
+def _anomaly_detector(payload: dict) -> dict:
+    """Module 3: Z-score + IQR anomaly detection on price history."""
+    ranked      = payload["ranked"]
+    retailer_id = payload["retailer_id"]
+
+    for sku, data in ranked.items():
         all_history = []
-        for comp in comp_prices:
-            h = db.get_price_history(retailer_id, comp, product_name, days=30)
+        for comp in data["competitor_prices"]:
+            h = db.get_price_history(retailer_id, comp, data["product_name"], days=30)
             all_history.extend(h)
         all_history.sort(key=lambda x: x.get("scraped_at", ""))
 
-        is_anomaly, anomaly_reason = _detect_anomaly(current_min, all_history)
+        is_anomaly, reason = _detect_anomaly(data["min_competitor_price"], all_history)
+        data["is_anomaly"]    = is_anomaly
+        data["anomaly_reason"] = reason
 
-        # ── Build Analytics Object ──────────────────
-        analytics = ProductAnalytics(
-            retailer_sku          = sku,
-            product_name          = product_name,
-            retailer_price        = my_price,
-            competitor_prices     = comp_prices,
-            min_competitor_price  = min_price,
-            avg_competitor_price  = round(avg_price, 2),
-            max_competitor_price  = max_price,
-            price_rank            = rank,
-            total_competitors     = n_comp,
-            price_gap_to_min      = round(gap_to_min, 2),
-            price_gap_pct_to_min  = round(gap_pct_min, 4),
-            trend                 = trend,
-            is_anomaly            = is_anomaly,
-            anomaly_reason        = anomaly_reason,
-        )
-        analytics_list.append(vars(analytics))
+    payload["ranked"] = ranked
+    return payload
 
-        # ── Alerts ──────────────────────────────────
-        if is_anomaly:
+
+def _alert_builder(payload: dict) -> dict:
+    """Module 4: Build Alert objects from analysis results."""
+    ranked    = payload["ranked"]
+    threshold = payload["threshold"]
+    alerts    = []
+    now       = datetime.now().isoformat()
+
+    for sku, data in ranked.items():
+        if data["is_anomaly"]:
             alerts.append({
-                "type":    "anomaly",
-                "sku":     sku,
-                "product": product_name,
-                "message": f"⚠ Price anomaly detected: {anomaly_reason}",
-                "severity": "high",
-                "at": datetime.now().isoformat(),
+                "type": "anomaly", "sku": sku, "product": data["product_name"],
+                "message": f"⚠ Price anomaly: {data['anomaly_reason']}",
+                "severity": "high", "at": now,
             })
 
-        if gap_pct_min > threshold and rank > 1:
-            cheapest_comp_name = min(comp_prices, key=comp_prices.get)
-            pct_display = gap_pct_min * 100
+        if data["price_gap_pct_to_min"] > threshold and data["price_rank"] > 1:
+            cheapest = min(data["competitor_prices"], key=data["competitor_prices"].get)
+            pct      = data["price_gap_pct_to_min"] * 100
             alerts.append({
-                "type":    "price_gap",
-                "sku":     sku,
-                "product": product_name,
-                "message": (f"📊 You are {pct_display:.1f}% above the cheapest competitor "
-                            f"({cheapest_comp_name} @ ₹{min_price:.0f})"),
-                "severity": "medium",
-                "at": datetime.now().isoformat(),
+                "type": "price_gap", "sku": sku, "product": data["product_name"],
+                "message": (f"📊 {pct:.1f}% above cheapest ({cheapest} "
+                            f"@ ₹{data['min_competitor_price']:.0f})"),
+                "severity": "medium", "at": now,
             })
 
-        if trend == "falling":
+        if data["trend"] == "falling":
             alerts.append({
-                "type":    "trend",
-                "sku":     sku,
-                "product": product_name,
-                "message": f"📉 Market prices for {product_name} are trending downward.",
-                "severity": "low",
-                "at": datetime.now().isoformat(),
+                "type": "trend", "sku": sku, "product": data["product_name"],
+                "message": f"📉 Market prices for {data['product_name']} trending downward.",
+                "severity": "low", "at": now,
             })
 
-    # ── Persist analytics to DB ──────────────────
+    payload["alerts"] = alerts
+    return payload
+
+
+# ─── Compose into a LangChain RunnableLambda pipeline ────────────
+
+# Each function wrapped as a Runnable, chained with |
+_analysis_pipeline = (
+    RunnableLambda(_price_rank_analysis)
+    | RunnableLambda(_trend_detector)
+    | RunnableLambda(_anomaly_detector)
+    | RunnableLambda(_alert_builder)
+)
+
+
+# ─── LangGraph node ───────────────────────────────────────────────
+
+def run_analyst_node(state: AgentState) -> dict:
+    """
+    LangGraph node: Analyst Agent.
+    Runs the four-module analytics pipeline via RunnableLambda chain.
+    Returns partial state update with analytics and alerts.
+    """
+    matches     = state["product_matches"]
+    catalog     = {p["sku"]: p for p in state["retailer_profile"].catalog}
+    retailer_id = state["retailer_id"]
+    cycle_id    = state["cycle_id"]
+
+    print(f"\n[Analyst] Running analytics pipeline on {len(matches)} matches...")
+
+    if not matches:
+        return {"analytics": [], "alerts": [], "analysis_complete": True, "current_node": "analyst"}
+
+    # Run the composed RunnableLambda pipeline
+    result = _analysis_pipeline.invoke({
+        "matches":    matches,
+        "catalog":    catalog,
+        "threshold":  state["retailer_profile"].alert_threshold_pct,
+        "retailer_id": retailer_id,
+    })
+
+    analytics_list = list(result["ranked"].values())
+    alerts         = result["alerts"]
+
+    # Persist to DB
     if analytics_list:
         conn = db.get_conn()
         conn.executemany("""
@@ -232,8 +201,8 @@ def run_analyst(state: AgentState, retailer_id: int) -> AgentState:
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, [
             (retailer_id, cycle_id,
-             a["retailer_sku"], a["product_name"],
-             a["retailer_price"], str(a["competitor_prices"]),
+             a["retailer_sku"], a["product_name"], a["retailer_price"],
+             str(a["competitor_prices"]),
              a["min_competitor_price"], a["avg_competitor_price"], a["max_competitor_price"],
              a["price_rank"], a["total_competitors"],
              a["price_gap_to_min"], a["price_gap_pct_to_min"],
@@ -244,20 +213,65 @@ def run_analyst(state: AgentState, retailer_id: int) -> AgentState:
         conn.commit()
         conn.close()
 
-    state.analytics = analytics_list
-    state.alerts    = alerts
-    state.analysis_complete = True
+    cheapest = sum(1 for a in analytics_list if a["price_rank"] == 1)
+    print(f"[Analyst] {len(analytics_list)} products analyzed | "
+          f"{len(alerts)} alerts | cheapest on {cheapest}/{len(analytics_list)}")
 
-    print(f"[Analyst] Done. {len(analytics_list)} products analyzed | "
-          f"{len(alerts)} alerts raised")
+    return {
+        "analytics":        analytics_list,
+        "alerts":           alerts,
+        "analysis_complete": True,
+        "current_node":     "analyst",
+    }
 
-    # Summary statistics
-    cheapest_count = sum(1 for a in analytics_list if a["price_rank"] == 1)
-    above_count    = sum(1 for a in analytics_list if a["price_rank"] > 1)
-    anomalies      = sum(1 for a in analytics_list if a["is_anomaly"])
 
-    print(f"  Cheapest on: {cheapest_count}/{len(analytics_list)} products")
-    print(f"  Above market: {above_count}/{len(analytics_list)} products")
-    print(f"  Anomalies: {anomalies}")
+# ─── Pure analytics helpers ───────────────────────────────────────
 
-    return state
+def _compute_trend(history: list) -> str:
+    if len(history) < 3:
+        return "stable"
+    prices  = [float(r["price"]) for r in history]
+    n       = len(prices)
+    x_mean  = (n - 1) / 2
+    y_mean  = statistics.mean(prices)
+    num     = sum((i - x_mean) * (p - y_mean) for i, p in enumerate(prices))
+    den     = sum((i - x_mean) ** 2 for i in range(n))
+    if den == 0:
+        return "stable"
+    slope = num / den / (y_mean or 1)
+    if slope < -0.005:
+        return "falling"
+    if slope >  0.005:
+        return "rising"
+    return "stable"
+
+
+def _detect_anomaly(current_price: float, history: list) -> tuple[bool, str]:
+    if len(history) < 5:
+        return False, ""
+    historical = [float(r["price"]) for r in history[:-1]]
+    if not historical:
+        return False, ""
+    mean  = statistics.mean(historical)
+    try:
+        stdev = statistics.stdev(historical)
+    except statistics.StatisticsError:
+        return False, ""
+    if stdev == 0:
+        return False, ""
+
+    z = abs(current_price - mean) / stdev
+    if z > 2.5:
+        direction = "dropped" if current_price < mean else "spiked"
+        return True, f"Price {direction} by {abs(current_price-mean)/mean*100:.1f}% (Z={z:.1f})"
+
+    sorted_h = sorted(historical)
+    q1 = sorted_h[len(sorted_h) // 4]
+    q3 = sorted_h[3 * len(sorted_h) // 4]
+    iqr = q3 - q1
+    if iqr > 0:
+        if current_price < q1 - 1.5 * iqr or current_price > q3 + 1.5 * iqr:
+            side = "below" if current_price < q1 - 1.5 * iqr else "above"
+            return True, f"Price {side} IQR fence (Q1=₹{q1:.0f}, Q3=₹{q3:.0f})"
+
+    return False, ""

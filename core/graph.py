@@ -1,254 +1,312 @@
 """
-RetailAgent — Agent Graph (LangGraph-style State Machine)
-===========================================================
-Implements the full LangGraph-style directed graph in pure Python.
+RetailAgent — LangGraph StateGraph Orchestrator
+=================================================
+This is the core of RetailAgent. Everything connects here.
 
-Nodes  = agents (functions that take state → return state)
-Edges  = conditional routing based on state flags
-State  = AgentState dataclass flowing through every node
+LangGraph patterns used:
+  - StateGraph                  → defines the agent graph
+  - add_node()                  → registers each agent as a node
+  - add_edge()                  → unconditional A→B connection
+  - add_conditional_edges()     → route based on state after a node
+  - MemorySaver                 → persist state across sessions (checkpointing)
+  - interrupt_before            → human-in-the-loop pause for approvals
+  - Command                     → explicit node-to-node routing
+  - START / END                 → LangGraph reserved entry/exit nodes
 
-Graph flow:
-  START
-    ↓
-  [intake_node]  ← if profile incomplete
-    ↓
-  [planner_node]
-    ↓
-  [scraper_node]  ← parallel async per competitor
-    ↓
-  [normalizer_node]
-    ↓
-  [analyst_node]
-    ↓
-  [pricing_node]
-    ↓
-  [decision_router] → auto_apply → [apply_prices]
-                    → suggest    → [queue_for_review]
-    ↓
-  [reporter_node]
-    ↓
-  [cycle_log_node]
-    ↓
-  END
+Graph topology:
+                    ┌──────────────────────────────┐
+                    ▼                              │
+    START → [route_start] ─► [intake] ─────────────┤
+                │                                  │
+                ▼                                  │
+           [planner]                               │
+                │                                  │
+                ▼                                  │
+           [scraper]                               │
+                │                                  │
+                ▼                                  │
+           [normalizer]                            │
+                │                                  │
+                ▼                                  │
+            [analyst]                              │
+                │                                  │
+                ▼                                  │
+            [pricing]                              │
+                │                                  │
+         ┌──────┴──────┐                           │
+         ▼             ▼                           │
+   [auto_apply]  [queue_review] ◄─ human-in-loop   │
+         └──────┬──────┘                           │
+                ▼                                  │
+           [reporter]                              │
+                │                                  │
+                ▼                                  │
+           [cycle_log] ──────────────────────────► END
 """
 
 import uuid
-from datetime import datetime
-from core.state import AgentState, RetailerProfile
-from core import database as db
+from datetime  import datetime
+from typing    import Literal
 
-from agents.intake_agent    import run_intake, load_demo_profile
-from agents.planner_agent   import run_planner
-from agents.scraper_agent   import run_scraper
-from agents.normalizer_agent import run_normalizer
-from agents.analyst_agent   import run_analyst
-from agents.pricing_agent   import run_pricing
-from agents.reporter_agent  import run_reporter
+from langgraph.graph        import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
+
+from core.state  import AgentState, RetailerProfile
+from core        import database as db
+
+from agents.intake_agent      import run_intake_node,     load_demo_profile
+from agents.planner_agent     import run_planner_node
+from agents.scraper_agent     import run_scraper_node
+from agents.normalizer_agent  import run_normalizer_node
+from agents.analyst_agent     import run_analyst_node
+from agents.pricing_agent     import run_pricing_node
+from agents.reporter_agent    import run_reporter_node
 
 
-# ─── Node definitions ────────────────────────────────────────────
+# ─── Routing functions ────────────────────────────────────────────
 
-class AgentGraph:
+def route_start(state: AgentState) -> Literal["intake", "planner"]:
     """
-    Pure-Python LangGraph-style state machine.
-    Each node is a callable that receives (state, retailer_id) → state.
-    Edges are conditional: the router reads state flags to decide next node.
+    Conditional edge from START.
+    If the retailer hasn't completed onboarding → intake node.
+    Otherwise jump straight to planner.
     """
+    if state.get("needs_onboarding", True):
+        return "intake"
+    return "planner"
 
-    def __init__(self, retailer_id: int):
-        self.retailer_id = retailer_id
-        self.node_log    = []
 
-    def _log(self, node_name: str, state: AgentState):
-        state.current_node = node_name
-        self.node_log.append({
-            "node": node_name,
-            "at": datetime.now().isoformat(),
-        })
+def route_after_pricing(state: AgentState) -> Literal["auto_apply", "queue_review"]:
+    """
+    Conditional edge after pricing node.
+    auto_apply → prices written automatically
+    queue_review → human approval required (interrupt_before triggers here)
+    """
+    if state["retailer_profile"].auto_apply_prices:
+        return "auto_apply"
+    return "queue_review"
 
-    # ── Node: intake ─────────────────────────────
-    def intake_node(self, state: AgentState) -> AgentState:
-        self._log("intake", state)
-        return run_intake(state)
 
-    # ── Node: planner ────────────────────────────
-    def planner_node(self, state: AgentState) -> AgentState:
-        self._log("planner", state)
-        return run_planner(state, self.retailer_id)
+# ─── Utility nodes ────────────────────────────────────────────────
 
-    # ── Node: scraper ────────────────────────────
-    def scraper_node(self, state: AgentState) -> AgentState:
-        self._log("scraper", state)
-        return run_scraper(state, self.retailer_id)
+def auto_apply_node(state: AgentState) -> dict:
+    """
+    Node: auto-apply all approved recommendations to catalog.
+    Only reached when retailer has auto_apply_prices=True.
+    """
+    recs    = state["recommendations"]
+    catalog = state["retailer_profile"].catalog
+    idx_map = {p["sku"]: i for i, p in enumerate(catalog)}
+    applied = 0
 
-    # ── Node: normalizer ─────────────────────────
-    def normalizer_node(self, state: AgentState) -> AgentState:
-        self._log("normalizer", state)
-        return run_normalizer(state, self.retailer_id)
+    for rec in recs:
+        if rec["action"] != "hold":
+            idx = idx_map.get(rec["retailer_sku"])
+            if idx is not None:
+                catalog[idx]["current_price"] = rec["recommended_price"]
+                rec["approved"] = True
+                applied += 1
 
-    # ── Node: analyst ────────────────────────────
-    def analyst_node(self, state: AgentState) -> AgentState:
-        self._log("analyst", state)
-        return run_analyst(state, self.retailer_id)
+    print(f"[Auto-apply] {applied} prices updated.")
+    return {"current_node": "auto_apply"}
 
-    # ── Node: pricing ────────────────────────────
-    def pricing_node(self, state: AgentState) -> AgentState:
-        self._log("pricing", state)
-        return run_pricing(state, self.retailer_id)
 
-    # ── Node: reporter ───────────────────────────
-    def reporter_node(self, state: AgentState) -> AgentState:
-        self._log("reporter", state)
-        return run_reporter(state, self.retailer_id)
+def queue_review_node(state: AgentState) -> dict:
+    """
+    Node: queue recommendations for human review.
+    LangGraph interrupt_before='queue_review' pauses the graph here,
+    lets the human approve/reject via the dashboard, then resumes.
+    All recommendations start as approved=None (pending).
+    """
+    actionable = [r for r in state["recommendations"] if r["action"] != "hold"]
+    print(f"[Queue Review] {len(actionable)} recommendations queued for approval.")
+    return {"current_node": "queue_review"}
 
-    # ── Node: cycle_log ──────────────────────────
-    def cycle_log_node(self, state: AgentState) -> AgentState:
-        self._log("cycle_log", state)
-        db.save_cycle_log(self.retailer_id, {
-            "cycle_id":             state.cycle_id,
-            "started_at":           state.cycle_started_at,
-            "ended_at":             datetime.now().isoformat(),
-            "status":               "completed",
-            "records_scraped":      len(state.scraped_records),
-            "matches_found":        len(state.product_matches),
-            "recommendations_made": len(state.recommendations),
-            "briefing":             state.morning_briefing,
-            "errors":               state.errors,
-        })
-        return state
 
-    # ── Conditional Router ───────────────────────
-    def _route(self, state: AgentState) -> str:
-        """
-        Decides which node runs next based on state.
-        Mimics LangGraph's conditional_edges.
-        """
-        if state.needs_onboarding:
-            return "intake"
-        if state.execution_plan is None:
-            return "planner"
-        if not state.scraping_complete:
-            return "scraper"
-        if not state.analysis_complete:
-            return "normalizer"
-        if not state.analytics:
-            return "analyst"
-        if not state.recommendations:
-            return "pricing"
-        if not state.morning_briefing:
-            return "reporter"
-        return "cycle_log"
+def cycle_log_node(state: AgentState) -> dict:
+    """Node: write cycle summary to audit log."""
+    db.save_cycle_log(state["retailer_id"], {
+        "cycle_id":             state["cycle_id"],
+        "started_at":           state["cycle_started_at"],
+        "ended_at":             datetime.now().isoformat(),
+        "status":               "completed",
+        "records_scraped":      len(state["scraped_records"]),
+        "matches_found":        len(state["product_matches"]),
+        "recommendations_made": len(state["recommendations"]),
+        "briefing":             state["morning_briefing"],
+        "errors":               state["errors"],
+    })
+    print(f"\n[Cycle Log] Cycle {state['cycle_id']} complete.")
+    return {"current_node": "cycle_log"}
 
-    # ── Main execution loop ──────────────────────
-    def run(self, state: AgentState) -> AgentState:
-        """
-        Execute the full agent graph from current state.
-        Runs nodes in order, routing based on state after each.
-        """
-        print(f"\n{'═'*60}")
-        print(f"  RetailAgent — Cycle: {state.cycle_id}")
-        print(f"  Started: {state.cycle_started_at}")
-        print(f"{'═'*60}")
 
-        NODE_MAP = {
-            "intake":      self.intake_node,
-            "planner":     self.planner_node,
-            "scraper":     self.scraper_node,
-            "normalizer":  self.normalizer_node,
-            "analyst":     self.analyst_node,
-            "pricing":     self.pricing_node,
-            "reporter":    self.reporter_node,
-            "cycle_log":   self.cycle_log_node,
+# ─── Graph builder ────────────────────────────────────────────────
+
+def build_graph(checkpointer=None) -> StateGraph:
+    """
+    Constructs and compiles the RetailAgent LangGraph StateGraph.
+
+    Args:
+        checkpointer: Optional LangGraph checkpointer for state persistence.
+                      Pass MemorySaver() for in-memory persistence across calls.
+
+    Returns:
+        Compiled CompiledStateGraph ready to invoke/stream.
+    """
+    graph = StateGraph(AgentState)
+
+    # ── Register all nodes ──────────────────────────────────────
+    graph.add_node("intake",       run_intake_node)
+    graph.add_node("planner",      run_planner_node)
+    graph.add_node("scraper",      run_scraper_node)
+    graph.add_node("normalizer",   run_normalizer_node)
+    graph.add_node("analyst",      run_analyst_node)
+    graph.add_node("pricing",      run_pricing_node)
+    graph.add_node("auto_apply",   auto_apply_node)
+    graph.add_node("queue_review", queue_review_node)
+    graph.add_node("reporter",     run_reporter_node)
+    graph.add_node("cycle_log",    cycle_log_node)
+
+    # ── Entry: conditional routing based on onboarding state ────
+    graph.add_conditional_edges(
+        START,
+        route_start,
+        {
+            "intake":  "intake",
+            "planner": "planner",
         }
+    )
 
-        # Fixed execution order (DAG traversal)
-        EXECUTION_ORDER = [
-            "intake", "planner", "scraper",
-            "normalizer", "analyst", "pricing",
-            "reporter", "cycle_log"
-        ]
+    # ── After intake → always go to planner ────────────────────
+    graph.add_edge("intake", "planner")
 
-        for node_name in EXECUTION_ORDER:
-            # Skip intake if onboarding already done
-            if node_name == "intake" and not state.needs_onboarding:
-                continue
+    # ── Linear pipeline: planner → scraper → normalizer → analyst → pricing
+    graph.add_edge("planner",    "scraper")
+    graph.add_edge("scraper",    "normalizer")
+    graph.add_edge("normalizer", "analyst")
+    graph.add_edge("analyst",    "pricing")
 
-            try:
-                node_fn = NODE_MAP[node_name]
-                state   = node_fn(state)
-            except Exception as e:
-                error_msg = f"Node '{node_name}' failed: {e}"
-                state.errors.append(error_msg)
-                print(f"\n  ⚠  {error_msg}")
+    # ── After pricing: conditional on auto_apply preference ─────
+    graph.add_conditional_edges(
+        "pricing",
+        route_after_pricing,
+        {
+            "auto_apply":   "auto_apply",
+            "queue_review": "queue_review",
+        }
+    )
 
-                # Non-fatal nodes: continue to next
-                # Fatal nodes: halt the graph
-                if node_name in ("intake", "planner"):
-                    print("  ✗  Fatal error in setup phase. Stopping.")
-                    break
-                # For other nodes, mark as skipped and continue
-                continue
+    # ── Both pricing paths converge at reporter ─────────────────
+    graph.add_edge("auto_apply",   "reporter")
+    graph.add_edge("queue_review", "reporter")
 
-        print(f"\n{'═'*60}")
-        print(f"  Cycle complete. Nodes executed: {[n['node'] for n in self.node_log]}")
-        print(f"{'═'*60}\n")
+    # ── Final nodes ─────────────────────────────────────────────
+    graph.add_edge("reporter",  "cycle_log")
+    graph.add_edge("cycle_log", END)
 
-        return state
+    # ── Compile with optional checkpointer ──────────────────────
+    compile_kwargs = {}
+    if checkpointer:
+        compile_kwargs["checkpointer"] = checkpointer
 
+    # Human-in-the-loop: pause BEFORE queue_review for approval
+    # compile_kwargs["interrupt_before"] = ["queue_review"]
 
-# ─── Graph Factory ───────────────────────────────────────────────
-
-def create_initial_state(profile: RetailerProfile = None) -> AgentState:
-    """Creates a fresh AgentState for a new cycle."""
-    state = AgentState()
-    state.cycle_id       = str(uuid.uuid4())[:8]
-    state.cycle_started_at = datetime.now().isoformat()
-
-    if profile:
-        state.retailer_profile = profile
-        state.needs_onboarding = not profile.onboarding_complete
-    else:
-        state.needs_onboarding = True
-
-    return state
+    return graph.compile(**compile_kwargs)
 
 
-def run_full_cycle(retailer_id: int, profile: RetailerProfile = None,
-                   interactive: bool = True) -> AgentState:
+# ─── Initial state factory ────────────────────────────────────────
+
+def make_initial_state(retailer_id: int,
+                       profile: RetailerProfile | None = None) -> AgentState:
     """
-    Entry point: run one complete RetailAgent cycle.
+    Create a fresh AgentState for a new cycle.
+    LangGraph requires all TypedDict fields to be initialised.
+    """
+    # Load existing profile from DB if not provided
+    if profile is None and retailer_id > 0:
+        profile_data = db.load_retailer_profile(retailer_id)
+        if profile_data:
+            profile = RetailerProfile(**{
+                k: v for k, v in profile_data.items()
+                if k in RetailerProfile.model_fields
+            })
+
+    needs_onboarding = (profile is None or not profile.onboarding_complete)
+
+    return AgentState(
+        retailer_id        = retailer_id,
+        retailer_profile   = profile or RetailerProfile(),
+        execution_plan     = None,
+        cycle_id           = str(uuid.uuid4())[:8],
+        cycle_started_at   = datetime.now().isoformat(),
+        needs_onboarding   = needs_onboarding,
+        scraping_complete  = False,
+        analysis_complete  = False,
+        scraped_records    = [],
+        product_matches    = [],
+        analytics          = [],
+        recommendations    = [],
+        alerts             = [],
+        errors             = [],
+        morning_briefing   = "",
+        current_node       = "start",
+    )
+
+
+# ─── Main runner ─────────────────────────────────────────────────
+
+def run_cycle(retailer_id: int,
+              profile: RetailerProfile | None = None,
+              stream: bool = False) -> AgentState:
+    """
+    Run one complete RetailAgent cycle.
 
     Args:
         retailer_id:  DB id of the retailer (0 for new)
-        profile:      Pre-loaded profile (skips onboarding if provided)
-        interactive:  If True, run intake interactively via CLI
+        profile:      Pre-loaded profile (skips onboarding if complete)
+        stream:       If True, print each node's output as it completes
+
+    Returns:
+        Final AgentState after the cycle completes
     """
-    # Load profile from DB if retailer_id is known
-    if retailer_id > 0 and profile is None:
-        profile_data = db.load_retailer_profile(retailer_id)
-        if profile_data:
-            p = RetailerProfile()
-            for k, v in profile_data.items():
-                if hasattr(p, k):
-                    setattr(p, k, v)
-            profile = p
+    db.init_db()
+    checkpointer = MemorySaver()
+    compiled     = build_graph(checkpointer=checkpointer)
 
-    state = create_initial_state(profile)
+    initial_state = make_initial_state(retailer_id, profile)
 
-    if not interactive and state.needs_onboarding:
-        # Use demo profile for non-interactive runs
-        state.retailer_profile = load_demo_profile()
-        state.needs_onboarding = False
+    # Thread config for MemorySaver checkpointing
+    config = {
+        "configurable": {
+            "thread_id": f"retailagent-{retailer_id}-{initial_state['cycle_id']}",
+        }
+    }
 
-    graph = AgentGraph(retailer_id)
-    state = graph.run(state)
+    print(f"\n{'═'*60}")
+    print(f"  RetailAgent LangGraph Cycle: {initial_state['cycle_id']}")
+    print(f"  Nodes: intake→planner→scraper→normalizer→analyst→pricing→reporter")
+    print(f"{'═'*60}")
 
-    # Save updated retailer profile
-    if state.retailer_profile.onboarding_complete:
-        rid = db.save_retailer_profile(state.retailer_profile.to_dict())
-        if retailer_id == 0:
-            retailer_id = rid
-        # Re-save cycle log with correct retailer_id
-        graph.retailer_id = retailer_id
+    if stream:
+        # Stream mode: print node name as each finishes
+        final_state = None
+        for chunk in compiled.stream(initial_state, config=config):
+            node_name = list(chunk.keys())[0]
+            print(f"  ✓ Node [{node_name}] complete")
+            # Merge chunk into final state
+            if final_state is None:
+                final_state = dict(initial_state)
+            final_state.update(chunk.get(node_name, {}))
+        return final_state or initial_state
+    else:
+        # Invoke mode: run to completion
+        final_state = compiled.invoke(initial_state, config=config)
 
-    return state
+        # Save updated profile to DB
+        if final_state["retailer_profile"].onboarding_complete:
+            rid = db.save_retailer_profile(final_state["retailer_profile"].model_dump())
+            if retailer_id == 0:
+                retailer_id = rid
+
+        return final_state

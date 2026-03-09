@@ -45,7 +45,7 @@ def _row(label: str, value: str, color: str = C.WHITE):
 
 def show_price_comparison(state: AgentState):
     """Show a live price comparison table."""
-    analytics = state.analytics
+    analytics = state["analytics"]
     if not analytics:
         print(f"  {C.YELLOW}No price data available yet.{C.RESET}")
         return
@@ -122,7 +122,7 @@ def show_recommendations(state: AgentState, retailer_id: int):
     """Show recommendations queue."""
     _header("💡 PRICING RECOMMENDATIONS")
 
-    recs = state.recommendations
+    recs = state["recommendations"]
     if not recs:
         print(f"  {C.GREEN}✓ No price changes recommended.{C.RESET}")
         return
@@ -161,7 +161,7 @@ def show_recommendations(state: AgentState, retailer_id: int):
 
 def show_alerts(state: AgentState):
     """Show alert feed."""
-    alerts = state.alerts
+    alerts = state["alerts"]
     if not alerts:
         return
 
@@ -178,28 +178,28 @@ def show_alerts(state: AgentState):
 
 def show_briefing(state: AgentState):
     """Show the morning briefing."""
-    if not state.morning_briefing:
+    if not state["morning_briefing"]:
         return
 
     _header("📰 MORNING BRIEFING")
-    for line in state.morning_briefing.split("\n"):
+    for line in state["morning_briefing"].split("\n"):
         print(f"  {line}")
 
 
 def show_cycle_summary(state: AgentState):
     """Show cycle execution summary."""
     _header("⚡ CYCLE SUMMARY")
-    _row("Cycle ID:",          state.cycle_id)
-    _row("Started:",           state.cycle_started_at[:19].replace("T", " "))
-    _row("Records scraped:",   str(len(state.scraped_records)))
-    _row("Products matched:",  str(len(state.product_matches)))
-    _row("Analytics computed:",str(len(state.analytics)))
-    _row("Recommendations:",   str(len(state.recommendations)))
-    _row("Alerts raised:",     str(len(state.alerts)))
+    _row("Cycle ID:",          state["cycle_id"])
+    _row("Started:",           state["cycle_started_at"][:19].replace("T", " "))
+    _row("Records scraped:",   str(len(state["scraped_records"])))
+    _row("Products matched:",  str(len(state["product_matches"])))
+    _row("Analytics computed:",str(len(state["analytics"])))
+    _row("Recommendations:",   str(len(state["recommendations"])))
+    _row("Alerts raised:",     str(len(state["alerts"])))
 
-    if state.errors:
+    if state["errors"]:
         print(f"\n  {C.YELLOW}Errors encountered:{C.RESET}")
-        for e in state.errors:
+        for e in state["errors"]:
             print(f"    {C.RED}• {e}{C.RESET}")
 
 
@@ -209,8 +209,8 @@ def show_full_dashboard(state: AgentState, retailer_id: int):
 
     print(f"\n{C.BOLD}{C.BLUE}  ██████╗ ███████╗████████╗ █████╗ ██╗██╗      █████╗  ██████╗ ███████╗███╗  ██╗████████╗{C.RESET}")
     print(f"{C.BOLD}{C.CYAN}  RetailAgent — Competitive Price Intelligence{C.RESET}")
-    print(f"  {C.DIM}Store: {state.retailer_profile.store_name}  |  "
-          f"Category: {state.retailer_profile.category}  |  "
+    print(f"  {C.DIM}Store: {state['retailer_profile'].store_name}  |  "
+          f"Category: {state['retailer_profile'].category}  |  "
           f"{datetime.now().strftime('%d %b %Y %H:%M')}{C.RESET}")
 
     show_price_comparison(state)
@@ -227,10 +227,10 @@ def interactive_approval(state: AgentState, retailer_id: int) -> AgentState:
     Allow the retailer to approve/reject recommendations interactively.
     Only runs if auto_apply is False and there are actionable recommendations.
     """
-    if state.retailer_profile.auto_apply_prices:
+    if state["retailer_profile"].auto_apply_prices:
         return state
 
-    actionable = [r for r in state.recommendations if r["action"] != "hold"]
+    actionable = [r for r in state["recommendations"] if r["action"] != "hold"]
     if not actionable:
         return state
 
@@ -254,7 +254,7 @@ def interactive_approval(state: AgentState, retailer_id: int) -> AgentState:
         elif choice == "a":
             r["approved"] = True
             # Apply to catalog
-            for product in state.retailer_profile.catalog:
+            for product in state["retailer_profile"].catalog:
                 if product["sku"] == r["retailer_sku"]:
                     product["current_price"] = r["recommended_price"]
                     break
@@ -272,7 +272,7 @@ def interactive_approval(state: AgentState, retailer_id: int) -> AgentState:
         for r in approved_recs:
             conn.execute(
                 "UPDATE recommendations SET approved=? WHERE retailer_sku=? AND cycle_id=?",
-                (int(r["approved"]), r["retailer_sku"], state.cycle_id)
+                (int(r["approved"]), r["retailer_sku"], state["cycle_id"])
             )
         conn.commit()
         conn.close()

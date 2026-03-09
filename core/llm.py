@@ -1,217 +1,161 @@
 """
-RetailAgent — Ollama LLM Client
-================================
-Thin wrapper around the Ollama REST API.
-All agents call this module for local LLM inference.
-Supports: text generation, structured JSON output, embeddings.
+RetailAgent — LLM & Embeddings (LangChain-Ollama)
+===================================================
+Single place where all LLM and embedding models are configured.
+Every agent imports from here — never instantiates models directly.
+
+LangChain patterns used:
+  - ChatOllama             → local LLM via Ollama
+  - OllamaEmbeddings       → nomic-embed-text for product matching
+  - JsonOutputParser       → structured JSON from LLM responses
+  - PydanticOutputParser   → Pydantic model from LLM responses
+  - PromptTemplate         → reusable prompt templates
+  - RunnableSequence (|)   → LCEL chains connecting prompt → model → parser
 """
 
-import json
-import requests
-import time
-from typing import Optional
-
-OLLAMA_BASE = "http://localhost:11434"
-
-# Model assignments per task type
-MODELS = {
-    "planner":    "qwen3.5:4b",   # use 70b if available
-    "pricing":    "qwen3.5:4b",
-    "analyst":    "qwen3.5:4b",
-    "reporter":   "qwen3.5:4b",
-    "normalizer": "qwen3.5:4b",
-    "intake":     "qwen3.5:4b",
-    "selector":   "qwen3.5:4b",   # self-healing scraper
-    "embedding":  "nomic-embed-text",
-}
+from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda, Runnable
+from pydantic import BaseModel
+import math, hashlib
 
 
-def _check_ollama() -> bool:
-    try:
-        r = requests.get(f"{OLLAMA_BASE}/api/tags", timeout=3)
-        return r.status_code == 200
-    except Exception:
-        return False
+# ─── Model names ────────────────────────────────────────────────
+CHAT_MODEL      = "qwen3.5:4b"        # swap for llama3.1:70b if available
+EMBED_MODEL     = "nomic-embed-text:latest"
+TEMPERATURE_LOW = 0.05              # deterministic for structured output
+TEMPERATURE_MED = 0.3               # slight creativity for briefings
 
 
-def list_available_models() -> list:
-    try:
-        r = requests.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
-        if r.status_code == 200:
-            return [m["name"] for m in r.json().get("models", [])]
-    except Exception:
-        pass
-    return []
-
-
-def _pick_best_model(role: str) -> str:
-    """Pick the best available model for a role."""
-    available = list_available_models()
-    preferred = MODELS.get(role, "qwen3.5:4b")
-
-    # Try exact match
-    if preferred in available:
-        return preferred
-
-    # Try family match
-    for m in available:
-        if "llama3" in m or "llama3.1" in m or "mistral" in m:
-            return m
-
-    # Fallback to whatever is installed
-    return available[0] if available else preferred
-
-
-def chat(role: str, system_prompt: str, user_message: str,
-         temperature: float = 0.1, max_retries: int = 2) -> str:
+# ─── LLM instances (shared, lazy-loaded) ────────────────────────
+def get_llm(temperature: float = TEMPERATURE_LOW) -> ChatOllama:
     """
-    Send a chat completion request to Ollama.
-    Returns the assistant's text response.
+    Returns a ChatOllama instance.
+    LangChain's ChatOllama speaks the /api/chat Ollama endpoint.
     """
-    model = _pick_best_model(role)
-
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_message},
-        ],
-        "stream": False,
-        "options": {
-            "temperature": temperature,
-            "num_predict": 2048,
-        }
-    }
-
-    for attempt in range(max_retries + 1):
-        try:
-            r = requests.post(
-                f"{OLLAMA_BASE}/api/chat",
-                json=payload,
-                timeout=120
-            )
-            r.raise_for_status()
-            return r.json()["message"]["content"].strip()
-        except requests.exceptions.ConnectionError:
-            raise RuntimeError(
-                "Ollama is not running. Start it with: ollama serve"
-            )
-        except Exception as e:
-            if attempt < max_retries:
-                time.sleep(2)
-                continue
-            raise RuntimeError(f"Ollama chat failed after {max_retries+1} attempts: {e}")
-
-
-def chat_json(role: str, system_prompt: str, user_message: str,
-              temperature: float = 0.05) -> dict:
-    """
-    Request structured JSON output from the LLM.
-    Automatically strips markdown fences and parses.
-    """
-    system_with_json = (
-        system_prompt
-        + "\n\nIMPORTANT: Respond ONLY with valid JSON. "
-          "No markdown fences, no explanation, no preamble. "
-          "Just the raw JSON object."
+    return ChatOllama(
+        model=CHAT_MODEL,
+        temperature=temperature,
+        num_predict=2048,
+        base_url="http://localhost:11434",
     )
 
-    raw = chat(role, system_with_json, user_message, temperature=temperature)
 
-    # Strip markdown fences if present
-    raw = raw.strip()
-    if raw.startswith("```"):
-        lines = raw.split("\n")
-        raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        # Try to extract JSON object from the text
-        import re
-        match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except Exception:
-                pass
-        raise ValueError(f"LLM returned invalid JSON: {raw[:300]}")
-
-
-def embed(text: str) -> list:
+def get_embeddings() -> OllamaEmbeddings:
     """
-    Generate a text embedding using nomic-embed-text via Ollama.
-    Returns a list of floats (768-dim vector).
-    Falls back to a simple TF-IDF-style hash vector if model unavailable.
+    Returns an OllamaEmbeddings instance using nomic-embed-text.
+    Used by the Normalizer Agent for semantic product matching.
     """
-    available = list_available_models()
-    embed_model = MODELS["embedding"]
+    return OllamaEmbeddings(
+        model=EMBED_MODEL,
+        base_url="http://localhost:11434",
+    )
 
-    if embed_model not in available:
-        # Graceful fallback: hash-based pseudo-embedding
-        return _fallback_embed(text)
 
+# ─── LCEL chain builders ─────────────────────────────────────────
+
+def make_json_chain(system_prompt: str, human_template: str) -> Runnable:
+    """
+    Build an LCEL chain: prompt | llm | json_parser
+    Returns structured dict from LLM response.
+
+    Usage:
+        chain = make_json_chain(SYSTEM, "{product} {prices}")
+        result = chain.invoke({"product": "...", "prices": "..."})
+    """
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt + "\n\nRespond ONLY with valid JSON. No markdown, no explanation."),
+        ("human",  human_template),
+    ])
+    return prompt | get_llm(TEMPERATURE_LOW) | JsonOutputParser()
+
+
+def make_str_chain(system_prompt: str, human_template: str) -> Runnable:
+    """
+    Build an LCEL chain: prompt | llm | str_parser
+    Returns plain text from LLM response.
+    """
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human",  human_template),
+    ])
+    return prompt | get_llm(TEMPERATURE_MED) | StrOutputParser()
+
+
+def make_pydantic_chain(system_prompt: str, human_template: str,
+                        schema: type[BaseModel]) -> Runnable:
+    """
+    Build an LCEL chain that parses output into a Pydantic model.
+    Uses with_structured_output() which is the modern approach in LangChain.
+    """
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human",  human_template),
+    ])
+    return prompt | get_llm(TEMPERATURE_LOW).with_structured_output(schema)
+
+
+# ─── Embedding helpers ───────────────────────────────────────────
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    """
+    Embed a batch of texts using OllamaEmbeddings.
+    Falls back to hash-based pseudo-embedding if Ollama unavailable.
+    """
     try:
-        r = requests.post(
-            f"{OLLAMA_BASE}/api/embeddings",
-            json={"model": embed_model, "prompt": text},
-            timeout=30
-        )
-        r.raise_for_status()
-        return r.json()["embedding"]
+        embedder = get_embeddings()
+        return embedder.embed_documents(texts)
+    except Exception:
+        return [_fallback_embed(t) for t in texts]
+
+
+def embed_query(text: str) -> list[float]:
+    """Embed a single query text."""
+    try:
+        embedder = get_embeddings()
+        return embedder.embed_query(text)
     except Exception:
         return _fallback_embed(text)
 
 
-def _fallback_embed(text: str) -> list:
-    """
-    Hash-based fallback embedding when nomic-embed-text is unavailable.
-    Uses character n-gram hashing into a 256-dim vector.
-    Not as good as a real embedding but enables the system to run
-    without the embedding model installed.
-    """
-    import hashlib
-    import math
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot   = sum(x * y for x, y in zip(a, b))
+    na    = math.sqrt(sum(x * x for x in a))
+    nb    = math.sqrt(sum(x * x for x in b))
+    return dot / (na * nb) if na and nb else 0.0
 
-    text = text.lower().strip()
-    vec = [0.0] * 256
 
-    # Unigrams and bigrams
+def _fallback_embed(text: str, dims: int = 256) -> list[float]:
+    """Hash-based fallback embedding when nomic-embed-text is unavailable."""
+    text   = text.lower().strip()
+    vec    = [0.0] * dims
     tokens = text.split()
-    ngrams = tokens + [tokens[i] + tokens[i+1] for i in range(len(tokens)-1)]
-
+    ngrams = tokens + [tokens[i] + tokens[i+1] for i in range(len(tokens) - 1)]
     for gram in ngrams:
-        h = int(hashlib.md5(gram.encode()).hexdigest(), 16)
-        idx = h % 256
+        idx = int(hashlib.md5(gram.encode()).hexdigest(), 16) % dims
         vec[idx] += 1.0
-
-    # L2 normalize
-    norm = math.sqrt(sum(x*x for x in vec)) or 1.0
+    norm = math.sqrt(sum(x * x for x in vec)) or 1.0
     return [x / norm for x in vec]
 
 
-def cosine_similarity(vec_a: list, vec_b: list) -> float:
-    """Cosine similarity between two vectors."""
-    if not vec_a or not vec_b or len(vec_a) != len(vec_b):
-        return 0.0
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
-    norm_a = sum(a * a for a in vec_a) ** 0.5
-    norm_b = sum(b * b for b in vec_b) ** 0.5
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+# ─── Ollama availability check ───────────────────────────────────
 
-
-def is_available() -> bool:
-    return _check_ollama()
-
-
-def status_report() -> dict:
-    available = _check_ollama()
-    models = list_available_models() if available else []
-    return {
-        "ollama_running": available,
-        "models_installed": models,
-        "embedding_available": MODELS["embedding"] in models,
-        "chat_model": _pick_best_model("intake") if available else "none",
-    }
+def check_ollama() -> dict:
+    """Check which Ollama models are available."""
+    import requests
+    try:
+        r = requests.get("http://localhost:11434/api/tags", timeout=3)
+        if r.status_code == 200:
+            models = [m["name"] for m in r.json().get("models", [])]
+            return {
+                "running": True,
+                "models": models,
+                "chat_ready": any(CHAT_MODEL in m for m in models),
+                "embed_ready": any(EMBED_MODEL in m for m in models),
+            }
+    except Exception:
+        pass
+    return {"running": False, "models": [], "chat_ready": False, "embed_ready": False}
