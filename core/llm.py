@@ -22,7 +22,7 @@ import math, hashlib
 
 
 # ─── Model names ────────────────────────────────────────────────
-CHAT_MODEL      = "qwen3.5:4b"        # swap for llama3.1:70b if available
+CHAT_MODEL      = "qwen2.5:3b-instruct"        # swap for llama3.1:70b if available #qwen3.5:4b
 EMBED_MODEL     = "nomic-embed-text:latest"
 TEMPERATURE_LOW = 0.05              # deterministic for structured output
 TEMPERATURE_MED = 0.3               # slight creativity for briefings
@@ -40,7 +40,6 @@ def get_llm(temperature: float = TEMPERATURE_LOW) -> ChatOllama:
         num_predict=2048,
         base_url="http://localhost:11434",
     )
-
 
 def get_embeddings() -> OllamaEmbeddings:
     """
