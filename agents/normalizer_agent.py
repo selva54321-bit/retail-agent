@@ -18,14 +18,13 @@ Flow:
 """
 
 import re
-from langchain_ollama       import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_core.documents import Document
-from langchain_core.prompts   import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.documents          import Document
+from langchain_core.prompts            import ChatPromptTemplate
+from langchain_core.output_parsers     import JsonOutputParser
 
 from core.state import AgentState
-from core.llm   import get_llm, embed_texts, embed_query, cosine_similarity
+from core.llm   import get_llm, get_embeddings, embed_query, cosine_similarity
 from core       import database as db
 
 
@@ -61,11 +60,12 @@ def _build_judgment_chain():
 
 def _build_catalog_vectorstore(catalog: list, retailer_id: int) -> Chroma:
     """
-    Embed the retailer's catalog and store in an in-memory Chroma vector store.
-    Each document's metadata carries the SKU and name for retrieval.
+    Embed the retailer's catalog into a Chroma vector store.
+    Uses get_embeddings() from core/llm.py — automatically picks
+    the active backend (Ollama nomic-embed-text or Gemini embedding-001).
 
     LangChain pattern:
-        Documents → OllamaEmbeddings → Chroma.from_documents()
+        Documents → get_embeddings() → Chroma.from_documents()
     """
     docs = [
         Document(
@@ -78,21 +78,17 @@ def _build_catalog_vectorstore(catalog: list, retailer_id: int) -> Chroma:
     ]
 
     try:
-        embeddings = OllamaEmbeddings(
-            model="nomic-embed-text",
-            base_url="http://localhost:11434",
-        )
         vectorstore = Chroma.from_documents(
-            documents   = docs,
-            embedding   = embeddings,
+            documents       = docs,
+            embedding       = get_embeddings(),   # ← provider-aware, from core/llm.py
             collection_name = f"catalog_{retailer_id}",
         )
-        print(f"  [Normalizer] Chroma vectorstore built with {len(docs)} catalog items.")
+        print(f"  [Normalizer] Chroma vectorstore built ({len(docs)} items).")
         return vectorstore
 
     except Exception as e:
-        print(f"  [Normalizer] Chroma/Ollama unavailable ({e}), using fallback embedding.")
-        return None   # signals to use fallback path
+        print(f"  [Normalizer] Chroma/embeddings unavailable ({e}), using fallback.")
+        return None
 
 
 def _normalize(name: str) -> str:
