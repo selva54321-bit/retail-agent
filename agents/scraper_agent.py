@@ -1,361 +1,628 @@
 """
-RetailAgent — Scraper Agent (LangChain Tools + Self-Healing LCEL)
-==================================================================
-LangChain patterns used:
-  - @tool decorator              → wraps scraping functions as LangChain Tools
-  - Tool                         → explicit Tool wrapper for selector regeneration
-  - create_react_agent           → ReAct agent that chooses which scraping tool to use
-  - AgentExecutor                → runs the ReAct loop
-  - RunnableLambda               → wraps the fallback simulation as a Runnable
-  - LCEL chain for self-healing  → failed DOM → prompt | llm | parser → new selectors
+RetailAgent — Scraper Agent (JS-Based DOM Extraction)
+======================================================
+The approach: after Playwright renders a search results page, we run
+JavaScript inside the browser to find ALL elements containing '₹',
+walk up the DOM to identify the product card, then pull the product
+name from the nearest h2/h3/a inside that card.
 
-Self-healing loop (Reflexion-inspired):
-  scrape() → fail → escalate_to_playwright() → fail →
-  llm_regenerate_selectors() → retry → fail → simulate()
+This is robust across Amazon, Flipkart, Croma, Reliance, and local
+sites because it does NOT depend on class names — it depends only on
+the presence of ₹ text which every Indian e-commerce site uses.
+
+Three wait strategies to handle bot-check pages:
+  1. Wait for DOMContentLoaded + wait for first ₹ symbol (up to 12s)
+  2. Slow scroll to trigger lazy loading, then re-check
+  3. Stealth context (hides webdriver flag, randomises fingerprint)
+
+Only top N results are returned (configurable, default 3) since the
+search URL already encodes the exact product name — the top results
+are the right product.
+
+LangChain patterns:
+  - @tool  → scrape_static_html / scrape_dynamic_page as LangChain Tools
+  - LCEL   → DOM snapshot → prompt | llm → fallback selector chain
 """
 
+import json
 import random
 import re
 import time
 import socket
 import concurrent.futures
-from datetime import datetime
-from typing import Optional
+from datetime  import datetime
+from typing    import Optional
 
 import requests
-from bs4 import BeautifulSoup
+from bs4       import BeautifulSoup
 
-from langchain_core.tools   import tool
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools          import tool
+from langchain_core.prompts        import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
-from core.state import AgentState, PriceRecord
+from core.state import AgentState
 from core.llm   import get_llm
 from core       import database as db
 
 
-# ─── Shared constants ────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+#  CONSTANTS
+# ─────────────────────────────────────────────────────────────────
+
+TOP_N_RESULTS = 3   # take top N results from each search page
+
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/118.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
 ]
 
-DOMAIN_SELECTORS = {
-    "amazon.in":          {"product": ".s-result-item[data-asin]", "name": "h2 .a-text-normal", "price": ".a-price .a-offscreen"},
-    "flipkart.com":       {"product": "._1AtVbE",  "name": "._4rR01T",    "price": "._30jeq3"},
-    "croma.com":          {"product": ".cp-product","name": ".product-title","price": ".amount"},
-    "reliancedigital.in": {"product": ".product-wrapper","name": ".product-name","price": ".pdp-final-price"},
+REQUEST_HEADERS = {
+    "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-IN,en;q=0.9,ta;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection":      "keep-alive",
+    "Cache-Control":   "max-age=0",
 }
 
 
-# ─── LangChain @tool definitions ─────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+#  JAVASCRIPT INJECTED INTO THE BROWSER
+#  Finds all ₹ price elements, walks up to product card, pulls name.
+#  Returns array of {name, price, original_price} objects.
+# ─────────────────────────────────────────────────────────────────
 
-@tool
-def scrape_static_html(url: str) -> str:
-    """
-    Scrape product prices from a static HTML page using BeautifulSoup.
-    Use this for simple sites where price is in the HTML source directly.
-    Returns JSON string of extracted products, or error message.
-    """
-    domain    = re.search(r"https?://(?:www\.)?([^/]+)", url)
-    domain    = domain.group(1) if domain else ""
-    selectors = DOMAIN_SELECTORS.get(domain, {"product": ".product", "name": ".name", "price": ".price"})
+EXTRACT_JS = """
+() => {
+  const results = [];
+  const seen    = new Set();
 
-    headers   = {"User-Agent": random.choice(USER_AGENTS)}
-    resp      = requests.get(url, headers=headers, timeout=15)
-    resp.raise_for_status()
+  // ── Helpers ────────────────────────────────────────────────
+  function parsePrice(text) {
+    if (!text) return null;
+    const clean = text.replace(/[^0-9.]/g, '');
+    const val   = parseFloat(clean);
+    return (!isNaN(val) && val > 10) ? val : null;
+  }
 
-    soup   = BeautifulSoup(resp.text, "html.parser")
-    items  = soup.select(selectors["product"])
-    results = []
+  function getText(el) {
+    return el ? el.innerText.trim() : '';
+  }
 
-    for item in items[:20]:
-        name_el  = item.select_one(selectors["name"])
-        price_el = item.select_one(selectors["price"])
-        if name_el and price_el:
-            price = _parse_price(price_el.get_text(strip=True))
-            if price:
-                results.append({"name": name_el.get_text(strip=True), "price": price})
-
-    return str(results)
-
-
-@tool
-def scrape_dynamic_page(url: str) -> str:
-    """
-    Scrape a JavaScript-rendered page using Playwright headless browser.
-    Use this for e-commerce sites that load prices via JavaScript.
-    Returns JSON string of extracted products, or error message.
-    """
-    from playwright.sync_api import sync_playwright
-
-    domain    = re.search(r"https?://(?:www\.)?([^/]+)", url)
-    domain    = domain.group(1) if domain else ""
-    selectors = DOMAIN_SELECTORS.get(domain, {"product": ".product", "name": ".name", "price": ".price"})
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        ctx     = browser.new_context(user_agent=random.choice(USER_AGENTS))
-        page    = ctx.new_page()
-        page.goto(url, wait_until="networkidle", timeout=30000)
-        time.sleep(random.uniform(1.5, 2.5))
-        html = page.content()
-        browser.close()
-
-    soup    = BeautifulSoup(html, "html.parser")
-    items   = soup.select(selectors["product"])
-    results = []
-
-    for item in items[:20]:
-        name_el  = item.select_one(selectors["name"])
-        price_el = item.select_one(selectors["price"])
-        if name_el and price_el:
-            price = _parse_price(price_el.get_text(strip=True))
-            if price:
-                results.append({"name": name_el.get_text(strip=True), "price": price})
-
-    return str(results)
-
-
-# ─── Self-Healing Selector Regeneration (LCEL) ───────────────────
-
-def _build_selector_chain():
-    """
-    LCEL chain: failed DOM → LLM → new CSS selectors.
-    This is the self-healing mechanism: when selectors stop working,
-    the LLM analyzes the current DOM and generates fresh ones.
-    """
-    prompt = ChatPromptTemplate.from_messages([
-        ("system",
-         "You are a web scraping expert. Given HTML from an e-commerce page, "
-         "generate CSS selectors for product containers, names, and prices. "
-         "Return ONLY JSON: {\"product\": \"selector\", \"name\": \"selector\", \"price\": \"selector\"}"),
-        ("human", "URL: {url}\n\nHTML snippet (first 4000 chars):\n{html_snippet}"),
-    ])
-    return prompt | get_llm(temperature=0.05) | JsonOutputParser()
-
-
-# ─── Price simulator ─────────────────────────────────────────────
-
-def simulate_prices(catalog: list, competitor_name: str) -> list[dict]:
-    """
-    Generates realistic simulated prices for a competitor when live scraping
-    is unavailable. Each competitor has a distinct pricing personality.
-    """
-    PERSONALITIES = {
-        "amazon india":     {"bias": -0.03, "variance": 0.06},
-        "flipkart":         {"bias": -0.05, "variance": 0.08},
-        "croma":            {"bias":  0.02, "variance": 0.04},
-        "reliance digital": {"bias":  0.01, "variance": 0.05},
-        "vijay sales":      {"bias": -0.01, "variance": 0.04},
+  // Walk up from a price element to find its product card container.
+  // The card is an ancestor that also contains a product name (h2/h3/a).
+  function findCard(priceEl) {
+    let el = priceEl.parentElement;
+    for (let i = 0; i < 12 && el; i++) {
+      const h = el.querySelector('h2, h3');
+      if (h && getText(h).length > 5) return el;
+      // Also accept anchor text that looks like a product name
+      const a = el.querySelector('a[title], a[aria-label]');
+      if (a) {
+        const t = (a.getAttribute('title') || a.getAttribute('aria-label') || '').trim();
+        if (t.length > 10) return el;
+      }
+      el = el.parentElement;
     }
-    p    = PERSONALITIES.get(competitor_name.lower(), {"bias": 0.0, "variance": 0.07})
-    now  = datetime.now().isoformat()
-    recs = []
+    return null;
+  }
 
-    for product in catalog:
-        base  = float(product.get("current_price", 0))
-        if base == 0:
-            continue
-        noise = random.uniform(-p["variance"], p["variance"])
-        price = round(base * (1 + p["bias"] + noise), -1)
+  // Extract the best product name from a card element.
+  function extractName(card) {
+    // Priority: h2 > h3 > a[title] > a[aria-label] > longest anchor text
+    const h2 = card.querySelector('h2');
+    if (h2) {
+      const span = h2.querySelector('span, a');
+      const t = getText(span || h2);
+      if (t.length > 5) return t;
+    }
+    const h3 = card.querySelector('h3');
+    if (h3) {
+      const t = getText(h3);
+      if (t.length > 5) return t;
+    }
+    const atitle = card.querySelector('a[title]');
+    if (atitle) {
+      const t = (atitle.getAttribute('title') || '').trim();
+      if (t.length > 5) return t;
+    }
+    const alabel = card.querySelector('a[aria-label]');
+    if (alabel) {
+      const t = (alabel.getAttribute('aria-label') || '').trim();
+      if (t.length > 5) return t;
+    }
+    // Fallback: longest anchor text in card
+    let bestA = '', bestLen = 0;
+    card.querySelectorAll('a').forEach(a => {
+      const t = getText(a);
+      if (t.length > bestLen) { bestLen = t.length; bestA = t; }
+    });
+    return bestA;
+  }
 
-        original = None
-        if random.random() < 0.20:
-            original = price
-            price    = round(price * random.uniform(0.85, 0.95), -1)
+  // Find the struck-through original price in the same card.
+  function extractOriginal(card) {
+    const selectors = [
+      'span.a-text-strike',          // Amazon
+      'del', 's',                    // generic
+      '[class*="original"]',
+      '[class*="strike"]',
+      '[class*="was-price"]',
+      '[class*="old-price"]',
+      '[class*="mrp"]',
+    ];
+    for (const sel of selectors) {
+      const el = card.querySelector(sel);
+      if (el) {
+        const p = parsePrice(getText(el));
+        if (p) return p;
+      }
+    }
+    return null;
+  }
 
-        recs.append({
-            "competitor_name":    competitor_name,
-            "competitor_url":     f"https://simulated/{competitor_name.lower().replace(' ','-')}",
-            "product_name_raw":   product["name"],
-            "price":              max(price, 1.0),
-            "original_price":     original,
-            "in_stock":           random.random() > 0.08,
-            "scraped_at":         now,
-            "confidence":         "medium",
-            "scrape_method_used": "simulated",
-        })
-    return recs
+  // ── Main scan ──────────────────────────────────────────────
+  // Find ALL text nodes containing ₹ across the page.
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    { acceptNode: n => n.textContent.includes('₹') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }
+  );
+
+  const priceNodes = [];
+  let node;
+  while ((node = walker.nextNode()) !== null) {
+    priceNodes.push(node.parentElement);
+  }
+
+  for (const priceEl of priceNodes) {
+    const priceText = getText(priceEl);
+    const price     = parsePrice(priceText);
+    if (!price) continue;
+
+    // Skip nav, header, footer, breadcrumbs, cart totals
+    const tag = (priceEl.tagName || '').toLowerCase();
+    if (['script','style','noscript'].includes(tag)) continue;
+
+    // Find the product card this price belongs to
+    const card = findCard(priceEl);
+    if (!card) continue;
+
+    const name = extractName(card);
+    if (!name || name.length < 5) continue;
+
+    // Dedup by name
+    const key = name.substring(0, 40).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const original = extractOriginal(card);
+
+    results.push({
+      name:           name.substring(0, 200),
+      price:          price,
+      original_price: (original && original > price) ? original : null,
+    });
+
+    if (results.length >= """ + str(TOP_N_RESULTS) + """) break;
+  }
+
+  return results;
+}
+"""
 
 
-# ─── Core scrape-one function with self-healing ───────────────────
+# ─────────────────────────────────────────────────────────────────
+#  HELPERS
+# ─────────────────────────────────────────────────────────────────
+
+def _parse_price(text: str) -> Optional[float]:
+    if not text:
+        return None
+    clean = re.sub(r"[^\d.]", "", text.replace(",", ""))
+    try:
+        val = float(clean)
+        return val if val > 0 else None
+    except ValueError:
+        return None
+
+
+def _get_domain(url: str) -> str:
+    m = re.search(r"https?://(?:www\.)?([^/]+)", url)
+    return m.group(1) if m else ""
+
 
 def _network_available() -> bool:
     try:
-        socket.setdefaulttimeout(2)
+        socket.setdefaulttimeout(3)
         socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect(("8.8.8.8", 53))
         return True
     except Exception:
         return False
 
 
-def _parse_price(text: str) -> Optional[float]:
-    clean = re.sub(r"[^\d.]", "", text.replace(",", ""))
-    try:
-        return float(clean) if clean else None
-    except ValueError:
-        return None
-
-
-def scrape_one_competitor(competitor: dict, catalog: list, retailer_id: int) -> list[dict]:
-    """
-    Scrape a single competitor with the three-tier strategy + self-healing.
-    This function is called in parallel threads by run_scraper_node.
-    """
-    url    = competitor["url"]
-    name   = competitor["competitor_name"]
-    method = competitor.get("scrape_method", "static")
-    now    = datetime.now().isoformat()
-
-    print(f"  [Scraper] {name} ({method}) → {url[:55]}...")
-
-    # Fast network check
-    if not _network_available():
-        print(f"    ✗ No network — simulating prices for {name}")
-        return simulate_prices(catalog, name)
-
-    domain    = re.search(r"https?://(?:www\.)?([^/]+)", url)
-    domain    = domain.group(1) if domain else ""
-    selectors = DOMAIN_SELECTORS.get(domain, competitor.get("selector_config") or {})
-
-    for attempt in range(3):
-        try:
-            if method == "static":
-                records = _static_scrape(url, selectors, name, now)
-            else:
-                records = _playwright_scrape(url, selectors, name, now)
-
-            if records:
-                db.mark_scrape_result(retailer_id, url, success=True)
-                print(f"    ✓ {len(records)} prices from {name}")
-                return records
-
-            # No results — escalate
-            if method == "static":
-                method = "dynamic"
-                print(f"    ↑ Escalating to Playwright")
-
-        except Exception as e:
-            print(f"    ✗ Attempt {attempt+1}: {str(e)[:70]}")
-
-            if attempt == 1:
-                # Self-healing: LLM regenerates CSS selectors
-                try:
-                    resp         = requests.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, timeout=10)
-                    selector_chain = _build_selector_chain()
-                    new_selectors  = selector_chain.invoke({
-                        "url":          url,
-                        "html_snippet": resp.text[:4000],
-                    })
-                    if new_selectors:
-                        selectors = new_selectors
-                        db.upsert_competitor(retailer_id, {**competitor, "selector_config": new_selectors})
-                        print(f"    ♺ Self-healed selectors via LLM")
-                except Exception:
-                    pass
-
-            time.sleep(random.uniform(1.5, 3.0))
-
-    # All retries failed
-    db.mark_scrape_result(retailer_id, url, success=False)
-    print(f"    → Using simulated prices for {name}")
-    return simulate_prices(catalog, name)
-
-
-def _static_scrape(url: str, selectors: dict, name: str, ts: str) -> list[dict]:
-    headers  = {"User-Agent": random.choice(USER_AGENTS)}
-    resp     = requests.get(url, headers=headers, timeout=15)
-    resp.raise_for_status()
-    soup     = BeautifulSoup(resp.text, "html.parser")
-    items    = soup.select(selectors.get("product", ".product"))
-    records  = []
-    for item in items[:20]:
-        ne = item.select_one(selectors.get("name",  ".name"))
-        pe = item.select_one(selectors.get("price", ".price"))
-        if ne and pe:
-            price = _parse_price(pe.get_text(strip=True))
-            if price:
-                records.append({
-                    "competitor_name": name, "competitor_url": url,
-                    "product_name_raw": ne.get_text(strip=True),
-                    "price": price, "original_price": None,
-                    "in_stock": True, "scraped_at": ts,
-                    "confidence": "high", "scrape_method_used": "static",
-                })
+def _records_from_js_results(js_results: list, competitor_name: str,
+                              url: str, ts: str,
+                              catalog_sku: str, catalog_product_name: str) -> list[dict]:
+    """Convert raw JS extraction results to price record dicts."""
+    records = []
+    for r in js_results:
+        name  = str(r.get("name", "")).strip()
+        price = r.get("price")
+        if not name or not price:
+            continue
+        records.append({
+            "competitor_name":     competitor_name,
+            "competitor_url":      url,
+            "product_name_raw":    name,
+            "price":               float(price),
+            "original_price":      r.get("original_price"),
+            "in_stock":            True,
+            "scraped_at":          ts,
+            "confidence":          "high",
+            "scrape_method_used":  "js_extract",
+            "catalog_sku":         catalog_sku,
+            "catalog_product_name": catalog_product_name,
+        })
     return records
 
 
-def _playwright_scrape(url: str, selectors: dict, name: str, ts: str) -> list[dict]:
+# ─────────────────────────────────────────────────────────────────
+#  STATIC SCRAPER (Tier 1 — BeautifulSoup fallback for simple sites)
+#  Used for Magento/WooCommerce sites that don't need JS.
+# ─────────────────────────────────────────────────────────────────
+
+def _static_scrape(url: str, competitor_name: str, ts: str,
+                   catalog_sku: str, catalog_product_name: str) -> list[dict]:
+    """
+    Static scrape using BeautifulSoup.
+    Looks for ₹ in text nodes, then walks up to find product name.
+    Same logic as the JS version but in Python.
+    """
+    headers = {**REQUEST_HEADERS, "User-Agent": random.choice(USER_AGENTS)}
+    resp    = requests.get(url, headers=headers, timeout=20)
+    resp.raise_for_status()
+
+    soup    = BeautifulSoup(resp.text, "html.parser")
+    records = []
+    seen    = set()
+
+    # Find all text containing ₹
+    for el in soup.find_all(string=re.compile(r'₹')):
+        price_text = el.strip()
+        price      = _parse_price(price_text)
+        if not price:
+            continue
+
+        # Walk up to find a container with a product name
+        parent = el.parent
+        card   = None
+        for _ in range(10):
+            if not parent:
+                break
+            if parent.find(['h2', 'h3']):
+                card = parent
+                break
+            parent = parent.parent
+
+        if not card:
+            continue
+
+        name_el = card.find(['h2', 'h3'])
+        name    = name_el.get_text(separator=" ", strip=True) if name_el else ""
+
+        if not name or len(name) < 5:
+            continue
+
+        key = name[:40].lower()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        records.append({
+            "competitor_name":     competitor_name,
+            "competitor_url":      url,
+            "product_name_raw":    name,
+            "price":               price,
+            "original_price":      None,
+            "in_stock":            True,
+            "scraped_at":          ts,
+            "confidence":          "medium",
+            "scrape_method_used":  "static_rupee_scan",
+            "catalog_sku":         catalog_sku,
+            "catalog_product_name": catalog_product_name,
+        })
+
+        if len(records) >= TOP_N_RESULTS:
+            break
+
+    return records
+
+
+# ─────────────────────────────────────────────────────────────────
+#  PLAYWRIGHT SCRAPER (Tier 2/3 — JS extraction)
+# ─────────────────────────────────────────────────────────────────
+
+def _playwright_scrape(url: str, competitor_name: str, ts: str,
+                       stealth: bool, catalog_sku: str,
+                       catalog_product_name: str) -> list[dict]:
+    """
+    Load the page with Playwright, wait for ₹ to appear in the DOM,
+    then run EXTRACT_JS to pull product names + prices.
+    Returns list of price record dicts (top N results).
+    """
     from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        ctx     = browser.new_context(user_agent=random.choice(USER_AGENTS))
-        page    = ctx.new_page()
-        page.goto(url, wait_until="networkidle", timeout=30000)
-        time.sleep(random.uniform(1.5, 2.5))
-        html = page.content()
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+            ],
+        )
+        ctx = browser.new_context(
+            user_agent=random.choice(USER_AGENTS),
+            viewport={"width": 1366, "height": 768},
+            locale="en-IN",
+            timezone_id="Asia/Kolkata",
+            extra_http_headers={
+                "Accept-Language":          "en-IN,en;q=0.9",
+                "Accept":                   "text/html,application/xhtml+xml,*/*;q=0.8",
+                "Upgrade-Insecure-Requests": "1",
+            },
+        )
+
+        # Mask webdriver in stealth mode
+        if stealth:
+            ctx.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
+                window.chrome = {runtime: {}};
+            """)
+
+        page = ctx.new_page()
+
+        # Block images/fonts/media to load faster
+        page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,mp4,webm}",
+                   lambda route: route.abort())
+
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
+        # ── Wait for ₹ to appear (up to 15 s) ──────────────────
+        # This is the key wait: we wait until actual price data renders,
+        # not just until the DOM is built.
+        try:
+            page.wait_for_function(
+                "() => document.body.innerText.includes('₹')",
+                timeout=15000,
+            )
+        except Exception:
+            # ₹ didn't appear — try scrolling to trigger lazy load
+            pass
+
+        # Scroll down to trigger any lazy-loaded product cards
+        if stealth:
+            for _ in range(3):
+                page.evaluate("window.scrollBy(0, window.innerHeight)")
+                time.sleep(random.uniform(0.8, 1.5))
+        else:
+            page.evaluate("window.scrollBy(0, 600)")
+            time.sleep(random.uniform(1.5, 2.5))
+
+        # ── Wait again after scroll ──────────────────────────────
+        try:
+            page.wait_for_function(
+                "() => document.body.innerText.includes('₹')",
+                timeout=8000,
+            )
+        except Exception:
+            pass
+
+        # ── Run JS extraction ────────────────────────────────────
+        try:
+            js_results = page.evaluate(EXTRACT_JS)
+        except Exception as e:
+            browser.close()
+            raise RuntimeError(f"JS extraction failed: {e}")
+
         browser.close()
 
-    soup    = BeautifulSoup(html, "html.parser")
-    items   = soup.select(selectors.get("product", ".product"))
-    records = []
-    for item in items[:20]:
-        ne = item.select_one(selectors.get("name",  ".name"))
-        pe = item.select_one(selectors.get("price", ".price"))
-        if ne and pe:
-            price = _parse_price(pe.get_text(strip=True))
-            if price:
-                records.append({
-                    "competitor_name": name, "competitor_url": url,
-                    "product_name_raw": ne.get_text(strip=True),
-                    "price": price, "original_price": None,
-                    "in_stock": True, "scraped_at": ts,
-                    "confidence": "high", "scrape_method_used": "dynamic",
-                })
-    return records
+    if not js_results:
+        return []
+
+    return _records_from_js_results(
+        js_results, competitor_name, url, ts,
+        catalog_sku, catalog_product_name
+    )
 
 
-# ─── LangGraph node ───────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+#  LANGCHAIN @TOOL WRAPPERS
+# ─────────────────────────────────────────────────────────────────
+
+@tool
+def scrape_static_html(url: str) -> str:
+    """
+    Scrape product prices from a static HTML page.
+    Scans for ₹ symbols and extracts product names + prices.
+    Returns JSON list or error.
+    """
+    try:
+        records = _static_scrape(url, "unknown", datetime.now().isoformat(), "", "")
+        return json.dumps(records[:3])
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@tool
+def scrape_dynamic_page(url: str) -> str:
+    """
+    Scrape a JS-rendered e-commerce page using Playwright.
+    Waits for ₹ symbols to appear in the DOM, then extracts top 3 results.
+    Returns JSON list or error.
+    """
+    try:
+        records = _playwright_scrape(url, "unknown", datetime.now().isoformat(),
+                                     stealth=False, catalog_sku="",
+                                     catalog_product_name="")
+        return json.dumps(records[:3])
+    except Exception as e:
+        return f"Error: {e}"
+
+
+# ─────────────────────────────────────────────────────────────────
+#  CORE: scrape one (competitor × product) target
+# ─────────────────────────────────────────────────────────────────
+
+def scrape_one_competitor(competitor: dict, catalog: list,
+                          retailer_id: int) -> list[dict]:
+    """
+    Scrape a single (competitor × product) search URL.
+
+    Flow:
+      1. Static scan (fast, no browser) — works for Magento/WooCommerce sites
+      2. Playwright + JS extraction — waits for ₹ in DOM, then runs EXTRACT_JS
+      3. Playwright stealth + scroll — for anti-bot protected sites
+
+    Each step only runs if the previous returned 0 results.
+    Returns [] on hard failure (blocked, CAPTCHA, DNS error).
+    """
+    url           = competitor["url"]
+    name          = competitor["competitor_name"]
+    method        = competitor.get("scrape_method", "dynamic")
+    catalog_sku   = competitor.get("catalog_sku", "")
+    catalog_pname = competitor.get("catalog_product_name", "")
+    ts            = datetime.now().isoformat()
+
+    short_name = f"{name} | {catalog_pname[:30]}" if catalog_pname else name
+    print(f"  [Scraper] {short_name} → {url[:65]}")
+
+    if not _network_available():
+        print(f"    ✗ No network — skipping")
+        return []
+
+    # ── Tier 1: Static scan ───────────────────────────────────
+    if method == "static":
+        try:
+            records = _static_scrape(url, name, ts, catalog_sku, catalog_pname)
+            if records:
+                print(f"    ✓ {len(records)} result(s) (static) — "
+                      f"₹{records[0]['price']:,.0f}")
+                db.mark_scrape_result(retailer_id, url, success=True)
+                return records
+            print(f"    ↑ Static: no ₹ found — escalating to Playwright")
+        except requests.HTTPError as e:
+            code = getattr(e.response, "status_code", 0)
+            if code in (403, 429, 503):
+                print(f"    ✗ HTTP {code} — blocked")
+                db.mark_scrape_result(retailer_id, url, success=False)
+                return []
+            print(f"    ↑ Static HTTP error ({code}) — escalating")
+        except Exception as e:
+            print(f"    ↑ Static error ({str(e)[:60]}) — escalating")
+
+    # ── Tier 2: Playwright (normal) ───────────────────────────
+    try:
+        records = _playwright_scrape(url, name, ts, stealth=False,
+                                     catalog_sku=catalog_sku,
+                                     catalog_product_name=catalog_pname)
+        if records:
+            print(f"    ✓ {len(records)} result(s) (playwright) — "
+                  f"₹{records[0]['price']:,.0f}")
+            db.mark_scrape_result(retailer_id, url, success=True)
+            return records
+        print(f"    ↕ Playwright: ₹ not found — escalating to stealth")
+    except Exception as e:
+        err = str(e)
+        if any(k in err.lower() for k in ("403", "blocked", "captcha", "access denied")):
+            print(f"    ✗ Blocked: {err[:70]}")
+            db.mark_scrape_result(retailer_id, url, success=False)
+            return []
+        print(f"    ↕ Playwright error ({err[:60]}) — escalating to stealth")
+
+    # ── Tier 3: Playwright stealth ────────────────────────────
+    try:
+        records = _playwright_scrape(url, name, ts, stealth=True,
+                                     catalog_sku=catalog_sku,
+                                     catalog_product_name=catalog_pname)
+        if records:
+            print(f"    ✓ {len(records)} result(s) (stealth) — "
+                  f"₹{records[0]['price']:,.0f}")
+            db.mark_scrape_result(retailer_id, url, success=True)
+            return records
+        print(f"    ✗ Stealth: still no ₹ found — page may be bot-protected")
+    except Exception as e:
+        err = str(e)
+        if any(k in err.lower() for k in ("403", "blocked", "captcha", "err_name_not_resolved")):
+            print(f"    ✗ {err[:70]}")
+        else:
+            print(f"    ✗ Stealth error: {err[:70]}")
+
+    db.mark_scrape_result(retailer_id, url, success=False)
+    print(f"    ✗ All tiers failed for {name} — no data this cycle")
+    return []
+
+
+# ─────────────────────────────────────────────────────────────────
+#  LANGGRAPH NODE
+# ─────────────────────────────────────────────────────────────────
 
 def run_scraper_node(state: AgentState) -> dict:
     """
     LangGraph node: Scraper Agent.
-    Runs all competitor scrapers in parallel using ThreadPoolExecutor.
-    Each branch is independent — a failure in one does not block others.
-    Returns partial state update with scraped_records.
+    Runs all (competitor × product) targets in parallel (max 4 threads).
+    Records are pre-tagged with catalog_sku — normalizer uses directly.
     """
     targets     = db.get_competitors(state["retailer_id"])
     catalog     = state["retailer_profile"].catalog
     retailer_id = state["retailer_id"]
 
-    print(f"\n[Scraper] Launching {len(targets)} parallel scrape branches...")
+    if not targets:
+        print("\n[Scraper] No targets registered.")
+        return {"scraped_records": [], "scraping_complete": True,
+                "current_node": "scraper"}
+
+    n_products = len({t.get("catalog_sku","") for t in targets
+                      if t.get("catalog_sku")})
+    n_comps    = len({t.get("competitor_name","") for t in targets})
+    print(f"\n[Scraper] {len(targets)} targets "
+          f"({n_products} products × {n_comps} competitors) — launching...")
 
     all_records: list[dict] = []
+    failed:      list[str]  = []
 
-    # LangGraph parallel pattern: all scraper branches run concurrently
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         futures = {
             executor.submit(scrape_one_competitor, t, catalog, retailer_id): t
             for t in targets
         }
         for future in concurrent.futures.as_completed(futures):
+            t = futures[future]
             try:
                 records = future.result()
                 all_records.extend(records)
+                if not records:
+                    failed.append(
+                        f"{t['competitor_name']}|{t.get('catalog_sku','?')}"
+                    )
             except Exception as e:
-                comp = futures[future].get("competitor_name", "unknown")
-                print(f"  [Scraper] Branch failed for {comp}: {e}")
+                failed.append(t["competitor_name"])
+                print(f"  [Scraper] Unhandled: {t['competitor_name']}: {e}")
 
     db.save_price_records(retailer_id, all_records)
 
-    print(f"[Scraper] Done. {len(all_records)} total price records.")
+    ok = len(targets) - len(failed)
+    print(f"\n[Scraper] Done — {len(all_records)} price records "
+          f"from {ok}/{len(targets)} targets")
+    if failed:
+        print(f"  No data for {len(failed)} target(s)")
 
-    # LangGraph merge: scraped_records uses operator.add, so this APPENDS
     return {
         "scraped_records":   all_records,
         "scraping_complete": True,
         "current_node":      "scraper",
+        "errors": ([f"Scraper: {len(failed)} targets no data"] if failed else []),
     }

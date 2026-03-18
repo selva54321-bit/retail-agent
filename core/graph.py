@@ -19,10 +19,13 @@ Graph topology:
     START → [route_start] ─► [intake] ─────────────┤
                 │                                  │
                 ▼                                  │
-           [planner]                               │
+           [planner]   ← known big-brand targets   │
                 │                                  │
                 ▼                                  │
-           [scraper]                               │
+            [scout]    ← discovers LOCAL shops in  │
+                │         retailer's city via search│
+                ▼                                  │
+           [scraper]   ← parallel per competitor   │
                 │                                  │
                 ▼                                  │
            [normalizer]                            │
@@ -50,12 +53,14 @@ from typing    import Literal
 
 from langgraph.graph        import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types        import interrupt
 
 from core.state  import AgentState, RetailerProfile
 from core        import database as db
 
 from agents.intake_agent      import run_intake_node,     load_demo_profile
 from agents.planner_agent     import run_planner_node
+from agents.scout_agent       import run_scout_node
 from agents.scraper_agent     import run_scraper_node
 from agents.normalizer_agent  import run_normalizer_node
 from agents.analyst_agent     import run_analyst_node
@@ -158,6 +163,7 @@ def build_graph(checkpointer=None) -> StateGraph:
     # ── Register all nodes ──────────────────────────────────────
     graph.add_node("intake",       run_intake_node)
     graph.add_node("planner",      run_planner_node)
+    graph.add_node("scout",        run_scout_node)
     graph.add_node("scraper",      run_scraper_node)
     graph.add_node("normalizer",   run_normalizer_node)
     graph.add_node("analyst",      run_analyst_node)
@@ -180,8 +186,12 @@ def build_graph(checkpointer=None) -> StateGraph:
     # ── After intake → always go to planner ────────────────────
     graph.add_edge("intake", "planner")
 
-    # ── Linear pipeline: planner → scraper → normalizer → analyst → pricing
-    graph.add_edge("planner",    "scraper")
+    # ── planner → scout (discover locals) → scraper ────────────
+    # Scout runs after planner so it has the retailer profile + location.
+    # It adds local competitors to the registry before scraper runs.
+    graph.add_edge("planner",    "scout")
+    graph.add_edge("scout",      "scraper")
+
     graph.add_edge("scraper",    "normalizer")
     graph.add_edge("normalizer", "analyst")
     graph.add_edge("analyst",    "pricing")

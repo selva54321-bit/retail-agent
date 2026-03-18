@@ -41,11 +41,11 @@ _config: dict = {
     "provider": "ollama",
 
     # ── Gemini settings ──────────────────────────────────────────
-    "gemini_api_key": os.environ.get("GOOGLE_API_KEY", "AIzaSyCLcAhoek7RMlD0zvPoUCwDj8gOGUvkdBw"),
+    "gemini_api_key": os.environ.get("GOOGLE_API_KEY", "AIzaSyBcSFLrsFiW7KWbau4HoiTui-QEmOFrVG8"),
     "gemini_model":   "gemini-2.5-flash",          # gemini-2.0-flash | gemini-1.5-pro | gemini-2.5-flash-lite
 
     # ── Ollama settings ──────────────────────────────────────────
-    "ollama_model":   "qwen2.5:3b-instruct",        # any model from: ollama list
+    "ollama_model":   "qwen3.5:2b",        # any model from: ollama list
     "ollama_base_url": "http://localhost:11434",
     "embed_model":    "nomic-embed-text:latest",    # used for product matching
 

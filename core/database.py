@@ -49,6 +49,10 @@ def init_db():
         last_scraped        TEXT,
         consecutive_failures INTEGER DEFAULT 0,
         active              INTEGER DEFAULT 1,
+        source              TEXT DEFAULT 'planner',
+        notes               TEXT DEFAULT '',
+        catalog_sku          TEXT DEFAULT '',
+        catalog_product_name TEXT DEFAULT '',
         UNIQUE(retailer_id, url)
     );
 
@@ -63,7 +67,8 @@ def init_db():
         in_stock            INTEGER DEFAULT 1,
         scraped_at          TEXT,
         confidence          TEXT DEFAULT 'high',
-        scrape_method_used  TEXT DEFAULT 'static'
+        scrape_method_used  TEXT DEFAULT 'static',
+        catalog_sku         TEXT DEFAULT ''
     );
 
     CREATE INDEX IF NOT EXISTS idx_price_history_competitor
@@ -194,14 +199,19 @@ def upsert_competitor(retailer_id: int, target: dict):
     conn.execute("""
         INSERT INTO competitor_registry
             (retailer_id, competitor_name, url, priority, scan_interval_hours,
-             scrape_method, product_category, selector_config)
-        VALUES (?,?,?,?,?,?,?,?)
+             scrape_method, product_category, selector_config, source, notes,
+             catalog_sku, catalog_product_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(retailer_id, url) DO UPDATE SET
             priority=excluded.priority,
             scan_interval_hours=excluded.scan_interval_hours,
             scrape_method=excluded.scrape_method,
             product_category=excluded.product_category,
-            selector_config=excluded.selector_config
+            selector_config=excluded.selector_config,
+            source=excluded.source,
+            notes=excluded.notes,
+            catalog_sku=excluded.catalog_sku,
+            catalog_product_name=excluded.catalog_product_name
     """, (
         retailer_id,
         target.get("competitor_name", ""),
@@ -211,6 +221,10 @@ def upsert_competitor(retailer_id: int, target: dict):
         target.get("scrape_method", "static"),
         target.get("product_category", ""),
         json.dumps(target.get("selector_config", {})),
+        target.get("source", "planner"),
+        target.get("notes", ""),
+        target.get("catalog_sku", ""),
+        target.get("catalog_product_name", ""),
     ))
     conn.commit()
     conn.close()
@@ -256,14 +270,16 @@ def save_price_records(retailer_id: int, records: list):
     conn.executemany("""
         INSERT INTO price_history
             (retailer_id, competitor_name, competitor_url, product_name_raw,
-             price, original_price, in_stock, scraped_at, confidence, scrape_method_used)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
+             price, original_price, in_stock, scraped_at, confidence,
+             scrape_method_used, catalog_sku)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
     """, [
         (retailer_id,
          r.get("competitor_name"), r.get("competitor_url"),
          r.get("product_name_raw"), r.get("price"), r.get("original_price"),
          int(r.get("in_stock", True)), r.get("scraped_at"),
-         r.get("confidence", "high"), r.get("scrape_method_used", "static"))
+         r.get("confidence", "high"), r.get("scrape_method_used", "static"),
+         r.get("catalog_sku", ""))
         for r in records
     ])
     conn.commit()

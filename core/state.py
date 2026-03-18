@@ -42,14 +42,17 @@ class RetailerProfile(BaseModel):
 
 
 class ScrapeTarget(BaseModel):
-    """A single competitor URL to monitor."""
-    competitor_name:     str
-    url:                 str
-    priority:            str   = "medium"
-    scan_interval_hours: int   = 24
-    scrape_method:       str   = "static"   # static | dynamic | anti_bot
-    product_category:    str   = ""
-    selector_config:     dict  = Field(default_factory=dict)
+    """A single competitor URL to monitor — one per (competitor × catalog product)."""
+    competitor_name:      str
+    url:                  str
+    priority:             str  = "medium"
+    scan_interval_hours:  int  = 24
+    scrape_method:        str  = "static"   # static | dynamic | anti_bot
+    product_category:     str  = ""
+    selector_config:      dict = Field(default_factory=dict)
+    # ── Product binding — set by planner, used by scraper ──────
+    catalog_sku:          str  = ""   # retailer's own SKU for this product
+    catalog_product_name: str  = ""   # exact name to search for on competitor
 
 
 class ExecutionPlan(BaseModel):

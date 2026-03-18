@@ -1,190 +1,281 @@
 """
-RetailAgent — Planner Agent (LCEL Chain + Structured Output)
-=============================================================
-LangChain patterns used:
-  - ChatPromptTemplate          → structured system + human prompt
-  - LCEL chain (|)              → prompt | llm | JsonOutputParser
-  - with_structured_output()    → bind Pydantic schema to model for
-                                   guaranteed structured JSON output
-  - RunnableLambda              → wraps the rule-based fallback as a Runnable
-  - RunnableParallel            → could run multiple planning chains in parallel
+RetailAgent — Planner Agent (Product-Level Search URL Generation)
+==================================================================
+Key design: generates one scrape target per (competitor × catalog product).
+Each URL uses the exact product name as the search query, so the scraper
+fetches the right product page and the result is pre-tagged with the SKU.
 
-The Planner uses chain-of-thought: the LLM reasons step by step
-before producing the final JSON execution plan.
+Example for "LG 32-inch Smart HD TV":
+  Amazon India → https://www.amazon.in/s?k=LG+32-inch+Smart+HD+TV
+  Flipkart     → https://www.flipkart.com/search?q=LG+32-inch+Smart+HD+TV
+  Croma        → https://www.croma.com/searchB?q=LG+32-inch+Smart+HD+TV
+  Vasanth Co   → https://www.vasanthandco.com/search?q=LG+32-inch+Smart+HD+TV
+
+LangChain patterns:
+  - ChatPromptTemplate | get_llm | JsonOutputParser  → LCEL planning chain
+  - Rule-based fallback                              → when LLM unavailable
 """
 
-from langchain_core.prompts   import ChatPromptTemplate
-from langchain_core.runnables import RunnableLambda, RunnablePassthrough
+import re
+from urllib.parse import quote_plus
+
+from langchain_core.prompts        import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
 from core.state import AgentState, RetailerProfile, ExecutionPlan, ScrapeTarget
-from core.llm   import get_llm, make_json_chain
+from core.llm   import get_llm
 from core       import database as db
 
 
-# ─── Planner system prompt ────────────────────────────────────────
-PLANNER_SYSTEM = """You are the Planner Agent for RetailAgent, a competitive price monitoring system.
+# ─────────────────────────────────────────────────────────────────
+#  COMPETITOR → URL TEMPLATE MAPPING
+#  Each entry: competitor domain fragment → (url_template, method)
+#  {q} will be replaced with the URL-encoded product name.
+# ─────────────────────────────────────────────────────────────────
 
-Given a retailer profile, produce a strategic monitoring execution plan.
-Think step by step before deciding:
-  1. What category velocity level is this? (high/medium/low)
-  2. Which competitors need most attention?
-  3. What scan frequency is appropriate per category?
-  4. What scraping method does each competitor site need?
+COMPETITOR_URL_MAP = {
+    # ── National e-commerce ──────────────────────────────────────
+    "amazon":            ("https://www.amazon.in/s?k={q}",                             "dynamic"),
+    "flipkart":          ("https://www.flipkart.com/search?q={q}",                     "dynamic"),
+    "croma":             ("https://www.croma.com/searchB?q={q}",                       "dynamic"),
+    "reliance digital":  ("https://www.reliancedigital.in/search?q={q}",               "dynamic"),
+    "vijay sales":       ("https://www.vijaysales.com/search/{q}",                     "dynamic"),
+    "vijaysales":        ("https://www.vijaysales.com/search/{q}",                     "dynamic"),
+    "tata cliq":         ("https://www.tatacliq.com/search/?searchCategory=all&q={q}", "dynamic"),
+    "meesho":            ("https://www.meesho.com/search?q={q}",                       "dynamic"),
+    "snapdeal":          ("https://www.snapdeal.com/search?keyword={q}",               "dynamic"),
 
-Return this exact JSON structure:
-{
-  "scrape_targets": [
-    {
-      "competitor_name": "string",
-      "url": "realistic URL for this competitor + category + location",
-      "priority": "high|medium|low",
-      "scan_interval_hours": number,
-      "scrape_method": "static|dynamic|anti_bot",
-      "product_category": "string"
-    }
-  ],
-  "priority_categories": ["list of subcategories to focus on"],
-  "strategy_framework": "competitive_parity|penetration|premium|value|cost_plus",
-  "reasoning": "2-3 sentence explanation of your strategy"
+    # ── South India / Tamil Nadu chains ─────────────────────────
+    "vasanth":           ("https://www.vasanthandco.com/search?q={q}",                 "dynamic"),
+    "poorvika":          ("https://www.poorvika.com/catalogsearch/result/?q={q}",      "dynamic"),
+    "sangeetha":         ("https://www.sangeetha.com/search?q={q}",                    "dynamic"),
+    "girias":            ("https://www.girias.com/catalogsearch/result/?q={q}",        "static"),
+    "pai international": ("https://www.pai.in/search?q={q}",                           "static"),
+    "pai":               ("https://www.pai.in/search?q={q}",                           "static"),
+    "lot mobiles":       ("https://www.lotmobiles.com/search?q={q}",                   "static"),
+    "lot":               ("https://www.lotmobiles.com/search?q={q}",                   "static"),
+    "bharath":           ("https://bharathelectronics.com/search?q={q}",               "static"),
+    "myntra":            ("https://www.myntra.com/{q}",                                "dynamic"),
+    "nykaa":             ("https://www.nykaa.com/search/result/?q={q}",                "dynamic"),
 }
 
-Frequency rules:
-  high velocity (electronics, grocery, phones): 3-6 hours
-  medium velocity (appliances, apparel): 12-24 hours
-  low velocity (furniture, specialty): 48-72 hours
 
-Scrape method rules:
-  Amazon, Flipkart, large e-commerce → dynamic (JS-rendered)
-  Small local sites → static
-  Cloudflare-protected → anti_bot
+def _make_search_url(competitor_name: str, product_name: str) -> tuple[str, str]:
+    """
+    Build a product-specific search URL for a competitor.
+    Returns (url, scrape_method).
+    """
+    comp_lower = competitor_name.lower().strip()
+    q          = quote_plus(product_name)
+
+    # Match against known templates
+    for key, (template, method) in COMPETITOR_URL_MAP.items():
+        if key in comp_lower:
+            return template.format(q=q), method
+
+    # Fallback: try to construct a domain from the name
+    domain = re.sub(r"[^a-z0-9]", "", comp_lower)
+    return f"https://www.{domain}.com/search?q={q}", "dynamic"
+
+
+def _product_slug(product_name: str) -> str:
+    """Short slug of a product name for logging."""
+    return product_name[:35] + ("…" if len(product_name) > 35 else "")
+
+
+# ─────────────────────────────────────────────────────────────────
+#  VELOCITY + INTERVAL MAPPING
+# ─────────────────────────────────────────────────────────────────
+
+def _scan_interval(category: str, frequency_pref: str) -> tuple[int, str]:
+    """Return (scan_interval_hours, priority) based on category."""
+    HIGH = {"electronics", "tv", "television", "mobile", "phone", "grocery", "fuel"}
+    LOW  = {"furniture", "jewellery", "specialty", "antique"}
+    cat  = category.lower()
+
+    if any(h in cat for h in HIGH):
+        hours, pri = 6, "high"
+    elif any(l in cat for l in LOW):
+        hours, pri = 48, "low"
+    else:
+        hours, pri = 24, "medium"
+
+    # Override from retailer's preference
+    if frequency_pref == "hourly":
+        hours = 2
+    elif frequency_pref == "weekly":
+        hours = 72
+
+    return hours, pri
+
+
+# ─────────────────────────────────────────────────────────────────
+#  LCEL PLANNER CHAIN  (for LLM-generated competitor suggestions)
+# ─────────────────────────────────────────────────────────────────
+
+PLANNER_SYSTEM = """You are the Planner Agent for RetailAgent, a competitive price monitoring system.
+
+Given a retailer profile, suggest additional REAL online competitors to monitor.
+Only suggest actual business names with working websites — no descriptions, 
+no conditionals, no generic phrases like "local stores".
+
+Return this exact JSON structure:
+{{
+  "additional_competitors": ["ExactStoreName1", "ExactStoreName2"],
+  "strategy_framework": "competitive_parity|penetration|premium|value|cost_plus",
+  "reasoning": "2-3 sentence explanation"
+}}
+
+Rules for additional_competitors:
+- Only real Indian retailer names with actual websites (e.g. "Pai International", "Girias")
+- Maximum 3 suggestions
+- Each name must be under 30 characters
+- Do NOT include conditional phrases, brackets, or descriptions
+- Do NOT suggest names already in the known list
+
+For TV/electronics in Tamil Nadu, valid examples: Pai International, Girias, Sangeetha
 """
 
 
 def _build_planner_chain():
-    """
-    Build the LCEL planner chain.
-    Chain: prompt | llm | json_parser
-    """
     prompt = ChatPromptTemplate.from_messages([
         ("system", PLANNER_SYSTEM),
-        ("human",  "{profile_summary}"),
+        ("human", "{profile_summary}"),
     ])
-    llm    = get_llm(temperature=0.05)
-    parser = JsonOutputParser()
-
-    # LCEL pipe operator builds the chain
-    return prompt | llm | parser
+    return prompt | get_llm(temperature=0.05) | JsonOutputParser()
 
 
-def _rule_based_plan(profile: RetailerProfile) -> dict:
-    """Fallback plan when LLM is unavailable."""
-    HIGH_VELOCITY = {"electronics", "grocery", "mobile", "phones"}
-    LOW_VELOCITY  = {"furniture", "jewellery", "specialty"}
+# ─────────────────────────────────────────────────────────────────
+#  CORE: BUILD TARGETS — one URL per (competitor × product)
+# ─────────────────────────────────────────────────────────────────
 
-    if profile.category.lower() in HIGH_VELOCITY:
-        interval, priority = 6, "high"
-    elif profile.category.lower() in LOW_VELOCITY:
-        interval, priority = 48, "low"
-    else:
-        interval, priority = 24, "medium"
-
-    cat_slug = profile.category.lower().replace(" ", "+")
-
-    METHOD_MAP = {
-        "amazon": "dynamic", "flipkart": "dynamic",
-        "croma": "dynamic", "reliance digital": "dynamic",
-    }
-    URL_TEMPLATES = {
-        "amazon india":     f"https://www.amazon.in/s?k={cat_slug}",
-        "flipkart":         f"https://www.flipkart.com/search?q={cat_slug}",
-        "croma":            f"https://www.croma.com/searchB?q={cat_slug}",
-        "reliance digital": f"https://www.reliancedigital.in/search?q={cat_slug}",
-    }
-
+def _build_targets(competitors: list[str], catalog: list[dict],
+                   category: str, frequency_pref: str) -> list[dict]:
+    """
+    Generate one scrape target per (competitor × catalog product).
+    Each target's URL uses the exact product name as the search query.
+    """
+    interval, priority = _scan_interval(category, frequency_pref)
     targets = []
-    for comp in profile.known_competitors:
-        comp_l = comp.lower().strip()
-        url    = URL_TEMPLATES.get(comp_l, f"https://www.{comp_l.replace(' ','-')}.com/search?q={cat_slug}")
-        method = next((v for k, v in METHOD_MAP.items() if k in comp_l), "dynamic")
-        targets.append({
-            "competitor_name":     comp,
-            "url":                 url,
-            "priority":            priority,
-            "scan_interval_hours": interval,
-            "scrape_method":       method,
-            "product_category":    profile.category,
-        })
 
-    # Add generic platforms if not already included
-    if not any("amazon" in c.lower() for c in profile.known_competitors):
-        targets.append({
-            "competitor_name": "Amazon India", "url": f"https://www.amazon.in/s?k={cat_slug}",
-            "priority": "high", "scan_interval_hours": 6,
-            "scrape_method": "dynamic", "product_category": profile.category,
-        })
+    for competitor in competitors:
+        for product in catalog:
+            pname = product.get("name", "")
+            sku   = product.get("sku", "")
+            if not pname:
+                continue
 
-    return {
-        "scrape_targets":      targets,
-        "priority_categories": profile.subcategories[:3],
-        "strategy_framework":  profile.pricing_strategy,
-        "reasoning":           f"Rule-based plan: {interval}h intervals for {profile.category}.",
-    }
+            url, method = _make_search_url(competitor, pname)
 
+            targets.append({
+                "competitor_name":     competitor,
+                "url":                 url,
+                "priority":            priority,
+                "scan_interval_hours": interval,
+                "scrape_method":       method,
+                "product_category":    category,
+                "selector_config":     {},
+                "source":              "planner",
+                "catalog_sku":         sku,
+                "catalog_product_name": pname,
+            })
+
+    return targets
+
+
+# ─────────────────────────────────────────────────────────────────
+#  LANGGRAPH NODE
+# ─────────────────────────────────────────────────────────────────
 
 def run_planner_node(state: AgentState) -> dict:
     """
     LangGraph node: Planner Agent.
-    Builds execution plan using LCEL chain → rule-based fallback.
-    Returns partial state update.
+
+    Strategy:
+      1. Use the known_competitors from intake profile as the base list
+      2. Ask LLM to suggest 2-3 additional relevant competitors
+      3. For EVERY competitor × EVERY catalog product → generate a search URL
+         using the exact product name as the query parameter
+      4. Register all targets in the competitor_registry DB
     """
     profile     = state["retailer_profile"]
     retailer_id = state["retailer_id"]
 
-    print("\n[Planner] Building monitoring strategy via LCEL chain...")
+    print("\n[Planner] Building product-level monitoring plan...")
+    print(f"  Catalog: {len(profile.catalog)} products × "
+          f"{len(profile.known_competitors)} known competitors")
 
-    profile_summary = f"""
-Store: {profile.store_name}
-Category: {profile.category} | Subcategories: {', '.join(profile.subcategories)}
-Location: {profile.location}
-Positioning: {profile.brand_positioning}
-Known Competitors: {', '.join(profile.known_competitors)}
-Pricing Strategy: {profile.pricing_strategy}
-Catalog: {len(profile.catalog)} products
-Preferred scan frequency: {profile.scan_frequency}
+    # ── Start with known competitors from intake ──────────────
+    all_competitors = list(profile.known_competitors)
 
-Generate a complete monitoring plan with realistic competitor URLs for this retailer.
-Also suggest 1-2 additional relevant online platforms if appropriate.
-"""
-
-    # Try LCEL chain first
+    # ── Ask LLM to suggest additional competitors ─────────────
+    profile_summary = (
+        f"Store: {profile.store_name}\n"
+        f"Category: {profile.category} | Location: {profile.location}\n"
+        f"Known competitors: {', '.join(profile.known_competitors)}\n"
+        f"Strategy: {profile.pricing_strategy}"
+    )
     try:
-        chain     = _build_planner_chain()
-        plan_data = chain.invoke({"profile_summary": profile_summary})
-    except Exception as e:
-        print(f"  [Planner] LLM unavailable ({e}), using rule-based plan.")
-        plan_data = _rule_based_plan(profile)
+        chain    = _build_planner_chain()
+        llm_data = chain.invoke({"profile_summary": profile_summary})
+        extras   = llm_data.get("additional_competitors", [])
+        strategy = llm_data.get("strategy_framework", profile.pricing_strategy)
+        reasoning = llm_data.get("reasoning", "")
 
-    # Build typed ExecutionPlan from raw dict
-    targets = [
-        ScrapeTarget(**{k: v for k, v in t.items() if k in ScrapeTarget.model_fields})
-        for t in plan_data.get("scrape_targets", [])
-    ]
-    plan = ExecutionPlan(
-        scrape_targets      = targets,
-        priority_categories = plan_data.get("priority_categories", profile.subcategories),
-        strategy_framework  = plan_data.get("strategy_framework",  profile.pricing_strategy),
-        reasoning           = plan_data.get("reasoning", ""),
+        existing_lower = {c.lower() for c in all_competitors}
+        for c in extras:
+            c = str(c).strip()
+            # ── Filter out garbage suggestions ─────────────────
+            # Reject if: too long (a sentence, not a name), contains
+            # conditional phrases, parentheticals, or is a generic description
+            if (not c
+                    or len(c) > 40
+                    or "(" in c
+                    or c.lower().startswith("local ")
+                    or "stores in" in c.lower()
+                    or "if they" in c.lower()
+                    or " or " in c.lower()):
+                print(f"  ✗ Filtered invalid suggestion: '{c}'")
+                continue
+            if c.lower() not in existing_lower:
+                all_competitors.append(c)
+                print(f"  + LLM suggested: {c}")
+
+    except Exception as e:
+        print(f"  [Planner] LLM unavailable ({str(e)[:60]}), using known competitors only.")
+        strategy  = profile.pricing_strategy
+        reasoning = f"Rule-based plan for {profile.category} in {profile.location}."
+
+    # ── Generate one URL per (competitor × product) ───────────
+    targets = _build_targets(
+        competitors    = all_competitors,
+        catalog        = profile.catalog,
+        category       = profile.category,
+        frequency_pref = profile.scan_frequency,
     )
 
-    # Persist targets to competitor registry DB
+    # ── Persist to DB ─────────────────────────────────────────
     for t in targets:
-        db.upsert_competitor(retailer_id, t.model_dump())
+        db.upsert_competitor(retailer_id, t)
 
-    print(f"  [Planner] {len(targets)} scrape targets registered.")
-    for t in targets:
-        print(f"    • {t.competitor_name} ({t.priority}) "
-              f"every {t.scan_interval_hours}h via {t.scrape_method}")
+    # ── Build ExecutionPlan ───────────────────────────────────
+    scrape_target_objs = [
+        ScrapeTarget(**{k: v for k, v in t.items() if k in ScrapeTarget.model_fields})
+        for t in targets
+    ]
+    plan = ExecutionPlan(
+        scrape_targets      = scrape_target_objs,
+        priority_categories = profile.subcategories or [profile.category],
+        strategy_framework  = strategy,
+        reasoning           = reasoning,
+    )
+
+    total_products = len(profile.catalog)
+    total_comps    = len(all_competitors)
+    print(f"  [Planner] {len(targets)} search targets registered "
+          f"({total_comps} competitors × {total_products} products)")
+    for c in all_competitors:
+        print(f"    • {c}")
 
     return {
         "execution_plan": plan,

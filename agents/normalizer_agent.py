@@ -172,7 +172,27 @@ def run_normalizer_node(state: AgentState) -> dict:
         comp_price   = float(record.get("price", 0))
         cache_key    = (comp_name, comp_product)
 
-        # ── Cache hit ──────────────────────────────────────────
+        # ── Fast path: record is pre-tagged by planner+scraper ─────
+        # When planner builds product-level search URLs, each scraped
+        # record already carries catalog_sku. Skip all embedding work.
+        pre_sku  = record.get("catalog_sku", "")
+        pre_name = record.get("catalog_product_name", "")
+        if pre_sku and pre_name:
+            match = {
+                "retailer_sku":            pre_sku,
+                "retailer_product_name":   pre_name,
+                "competitor_name":         comp_name,
+                "competitor_product_name": comp_product,
+                "competitor_price":        comp_price,
+                "similarity_score":        1.0,
+                "match_method":            "pre_tagged",
+            }
+            matches.append(match)
+            db.save_product_mapping(retailer_id, match)
+            new_ct += 1
+            continue
+
+        # ── Cache hit ──────────────────────────────────────────────
         if cache_key in cache_lookup:
             cached = dict(cache_lookup[cache_key])
             cached["competitor_price"] = comp_price
@@ -234,7 +254,7 @@ def run_normalizer_node(state: AgentState) -> dict:
             db.save_product_mapping(retailer_id, match)
             new_ct += 1
 
-    print(f"[Normalizer] {len(matches)} matches | {new_ct} new | {cached_ct} cached")
+    print(f"[Normalizer] {len(matches)} matches | {new_ct} new (incl. pre-tagged) | {cached_ct} cached")
     unmatched = len(scraped) - len({m["competitor_product_name"] for m in matches})
     if unmatched > 0:
         print(f"  {unmatched} products could not be matched (flagged for review)")
