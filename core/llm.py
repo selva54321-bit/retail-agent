@@ -41,11 +41,13 @@ _config: dict = {
     "provider": "ollama",
 
     # ── Gemini settings ──────────────────────────────────────────
-    "gemini_api_key": os.environ.get("GOOGLE_API_KEY", "AIzaSyBcSFLrsFiW7KWbau4HoiTui-QEmOFrVG8"),
-    "gemini_model":   "gemini-2.5-flash",          # gemini-2.0-flash | gemini-1.5-pro | gemini-2.5-flash-lite
+    "gemini_api_key": os.environ.get("GOOGLE_API_KEY", "AIzaSyChiH_lcTOtEde6jnpmJ0aZ_-JZhAw8KJg"),
+    "gemini_model":   "gemini-2.5-flash-lite",          # gemini-1.5-pro | gemini-1.5-flash
+    "gemini_vision_model": "gemini-2.5-flash-lite",
 
     # ── Ollama settings ──────────────────────────────────────────
-    "ollama_model":   "qwen3.5:2b",        # any model from: ollama list
+    "ollama_model":   "qwen2:1.5b",        # any model from: ollama list
+    "ollama_vision_model": "llava:latest",
     "ollama_base_url": "http://localhost:11434",
     "embed_model":    "nomic-embed-text:latest",    # used for product matching
 
@@ -54,6 +56,34 @@ _config: dict = {
     "temperature_med": 0.30,   # slight creativity — briefing text
 }
 
+
+# ─────────────────────────────────────────────────────────────────
+#  RETRY DECORATOR
+# ─────────────────────────────────────────────────────────────────
+
+import time
+from functools import wraps
+
+def call_with_retry(func, max_retries=3, delay=2):
+    """Retry a function call on any exception."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        attempts = 0
+        while attempts < max_retries:
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                attempts += 1
+                print(f"    [Retry] Attempt {attempts}/{max_retries} failed: {e}")
+                if attempts >= max_retries:
+                    raise
+                time.sleep(delay)
+    return wrapper()
+
+
+# ─────────────────────────────────────────────────────────────────
+#  PROVIDER SWITCH
+# ─────────────────────────────────────────────────────────────────
 
 def set_provider(provider: str) -> None:
     """
@@ -75,6 +105,34 @@ def get_active_provider() -> str:
 
 def get_active_model_name() -> str:
     return _config["gemini_model"] if _config["provider"] == "gemini" else _config["ollama_model"]
+
+
+def get_vision_llm() -> BaseChatModel:
+    """
+    Returns the active vision-capable LLM as a LangChain BaseChatModel.
+    Currently supports Gemini and Ollama backends.
+    """
+    if _config["provider"] == "gemini":
+        return _get_gemini_vision_llm()
+    return _get_ollama_vision_llm()
+
+
+def _get_ollama_vision_llm() -> BaseChatModel:
+    from langchain_ollama import ChatOllama
+    return ChatOllama(
+        model=_config["ollama_vision_model"],
+        temperature=_config["temperature_low"],
+        base_url=_config["ollama_base_url"],
+    )
+
+
+def _get_gemini_vision_llm() -> BaseChatModel:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    return ChatGoogleGenerativeAI(
+        model=_config["gemini_vision_model"],
+        temperature=_config["temperature_low"],
+        google_api_key=_config["gemini_api_key"],
+    )
 
 
 # ─────────────────────────────────────────────────────────────────

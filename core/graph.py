@@ -61,7 +61,7 @@ from core        import database as db
 from agents.intake_agent      import run_intake_node,     load_demo_profile
 from agents.planner_agent     import run_planner_node
 from agents.scout_agent       import run_scout_node
-from agents.scraper_agent     import run_scraper_node
+from agents.scraper           import run_scraper_node          # ← sub-agentic scraper package
 from agents.normalizer_agent  import run_normalizer_node
 from agents.analyst_agent     import run_analyst_node
 from agents.pricing_agent     import run_pricing_node

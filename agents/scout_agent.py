@@ -67,16 +67,14 @@ def _build_search_queries(category: str, subcategories: list, location: str) -> 
     primary = subcategories[0] if subcategories else category
 
     queries = [
-        f"{primary} shops {city} website",
-        f"buy {primary} {city} online store",
-        f"{category} dealers {city} site:*.in OR site:*.com",
-        f"best {primary} store {city}",
-        f"{primary} price {city} shop",
+        f'{primary} shops in {city}',
+        f'buy {primary} local stores {city}',
+        f'{primary} showroom {city} website',
     ]
 
     # Add subcategory-specific queries if multiple subcategories
     for sub in subcategories[1:3]:
-        queries.append(f"{sub} showroom {city} website")
+        queries.append(f'{sub} electronics shop {city}')
 
     return queries
 
@@ -246,18 +244,21 @@ def _discover_local_competitors(profile, retailer_id: int,
     print(f"  [Scout] Running {len(queries)} search queries...")
 
     for query in queries:
-        try:
-            results = ddg_search.invoke(query)
-            # results is a list of dicts: [{snippet, title, link}, ...]
-            for r in (results if isinstance(results, list) else []):
-                key = r.get("link", "") or r.get("snippet", "")[:60]
-                if key and key not in seen_snippets:
-                    seen_snippets.add(key)
-                    all_results.append(r)
-            time.sleep(0.5)   # be polite to DuckDuckGo
-        except Exception as e:
-            print(f"  [Scout] Search failed for '{query}': {e}")
-            continue
+        for attempt in range(2):
+            try:
+                results = ddg_search.invoke(query)
+                # results is a list of dicts: [{snippet, title, link}, ...]
+                for r in (results if isinstance(results, list) else []):
+                    key = r.get("link", "") or r.get("snippet", "")[:60]
+                    if key and key not in seen_snippets:
+                        seen_snippets.add(key)
+                        all_results.append(r)
+                time.sleep(1.0)   # be polite to DuckDuckGo
+                break  # success
+            except Exception as e:
+                print(f"  [Scout] Search failed for '{query}' (attempt {attempt+1}): {e}")
+                time.sleep(2.0)
+                continue
 
     if not all_results:
         print("  [Scout] No search results returned.")
@@ -398,6 +399,14 @@ def run_scout_node(state: AgentState) -> dict:
 
     print(f"\n[Scout] Discovering local competitors for "
           f"{profile.category} in {profile.location}...")
+
+    # Skip discovery when category already has predefined competitors
+    from agents.intake_agent import CATEGORY_COMPETITORS
+    cat = profile.category.lower().strip()
+    has_predefined = any(key in cat or cat in key for key in CATEGORY_COMPETITORS)
+    if has_predefined:
+        print("  [Scout] Category has predefined competitors — skipping discovery.")
+        return {"current_node": "scout"}
 
     # Skip if no network
     if not _network_available():

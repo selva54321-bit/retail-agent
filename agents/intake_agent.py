@@ -80,6 +80,32 @@ Return ONLY this JSON (no markdown, no explanation, no extra keys):
 
 
 # ─────────────────────────────────────────────────────────────────
+#  CATEGORY → COMPETITORS MAPPING
+#  Maps product categories to the competitors we can reliably scrape.
+#  Each competitor name must match a key in COMPETITOR_URL_MAP
+#  (planner_agent.py) so URLs get generated correctly.
+#  Expand this dict to support more categories later.
+# ─────────────────────────────────────────────────────────────────
+
+CATEGORY_COMPETITORS = {
+    "electronics":   ["Amazon India", "Flipkart", "Poorvika", "Croma"],
+    "televisions":   ["Amazon India", "Flipkart", "Poorvika", "Croma"],
+    "tv":            ["Amazon India", "Flipkart", "Poorvika", "Croma"],
+    "mobile":        ["Amazon India", "Flipkart", "Poorvika", "Sangeetha"],
+    "appliances":    ["Amazon India", "Flipkart", "Croma", "Reliance Digital"],
+}
+
+
+def get_competitors_for_category(category: str) -> list[str]:
+    """Resolve competitors from category. Falls back to electronics defaults."""
+    cat = category.lower().strip()
+    for key, comps in CATEGORY_COMPETITORS.items():
+        if key in cat or cat in key:
+            return list(comps)
+    return CATEGORY_COMPETITORS["electronics"]  # safe default
+
+
+# ─────────────────────────────────────────────────────────────────
 #  DEMO CATALOG  —  TV specialty store in Coimbatore
 #  Products match what the demo profile sells so search URLs
 #  use exact product names and return real results.
@@ -98,58 +124,18 @@ DEMO_CATALOG = [
         "current_price": 33230,
         "cost":          28245,
     },
-    # {
-    #     "name":          "Sony Bravia 55-inch 4K Google TV K55S25M",
-    #     "sku":           "SNY-55-K55S25M",
-    #     "current_price": 61437,
-    #     "cost":          52220,
-    # },
-    # {
-    #     "name":          "TCL 55-inch QD-Mini LED 4K C6K",
-    #     "sku":           "TCL-55-C6K",
-    #     "current_price": 49990,
-    #     "cost":          42490,
-    # },
-    # {
-    #     "name":          "Croma 32-inch HD Ready LED TV CREL032HBB024601",
-    #     "sku":           "CRM-32-HBB024601",
-    #     "current_price": 8690,
-    #     "cost":          7385,
-    # },
-]
-
-
-# ─────────────────────────────────────────────────────────────────
-#  DEMO PROFILE — TV specialty store, Saibaba Colony, Coimbatore
-#  Includes both local Coimbatore competitors and national platforms.
-#  These names feed directly into the planner's URL builder, so they
-#  must match keys in COMPETITOR_URL_MAP in planner_agent.py.
-# ─────────────────────────────────────────────────────────────────
-
-_DEMO_KNOWN_COMPETITORS = [
-    # Local Coimbatore / Tamil Nadu chains
-    "Vasanth and Co",
-    "Poorvika",
-    "Sangeetha",
-    "Girias",
-    # National e-commerce
-    "Amazon India",
-    "Flipkart",
-    "Croma",
-    "Reliance Digital",
-    "Vijay Sales",
-    "Tata Cliq",
 ]
 
 
 def _make_demo_profile() -> RetailerProfile:
+    category = "televisions"
     return RetailerProfile(
         store_name           = "The TV Shop Coimbatore",
-        category             = "televisions",
+        category             = category,
         subcategories        = ["LED TV", "OLED TV", "Smart TV", "4K TV"],
         location             = "Saibaba Colony, Coimbatore, Tamil Nadu",
         brand_positioning    = "specialist_retailer",
-        known_competitors    = _DEMO_KNOWN_COMPETITORS,
+        known_competitors    = get_competitors_for_category(category),
         pricing_strategy     = "competitive_parity",
         cost_margin_floor    = 0.12,
         max_price_shift_pct  = 0.15,
@@ -243,6 +229,10 @@ def run_intake_node(state: AgentState) -> dict:
         if k in RetailerProfile.model_fields
     })
     profile.onboarding_complete = True
+
+    # Auto-populate competitors from category if user didn't provide any
+    if not profile.known_competitors or len(profile.known_competitors) < 2:
+        profile.known_competitors = get_competitors_for_category(profile.category)
 
     print(f"\n  ✅  {profile.store_name} | {profile.category} | {profile.location}")
 
