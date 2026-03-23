@@ -33,12 +33,11 @@ from core       import database as db
 ACTIVE_COMPETITORS = {
     "amazon india",
     "flipkart",
-    "poorvika",
-    # Add more once these three are verified working:
+    # Add more here as they are verified:
     # "croma",
-    # "sangeetha",
-    # "girias",
+    # "reliance digital",
     # "vasanth and co",
+    "poorvika",
 }
 
 
@@ -107,10 +106,7 @@ def run_scraper_node(state: AgentState) -> dict:
     all_records: list[dict] = []
     failed:      list[str]  = []
 
-    # max_workers=1 because headed (visible) browsers must run sequentially —
-    # multiple browser windows simultaneously cause timing/focus conflicts.
-    # Switch to max_workers=3 if you change navigator to headless=True.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(run_scraper_subgraph, t): t
             for t in active_targets

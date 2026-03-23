@@ -61,7 +61,6 @@ COMPETITOR_URL_MAP = {
     "lot":               ("https://www.lotmobiles.com",        "dynamic"),
     "bharath":           ("https://bharathelectronics.com",    "dynamic"),
     "viveks":            ("https://www.viveks.com",            "dynamic"),
-    "adishwar":          ("https://www.adishwar.com",          "dynamic"),
 }
 
 
