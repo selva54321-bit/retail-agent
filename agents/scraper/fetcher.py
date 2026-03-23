@@ -42,6 +42,7 @@ SECTION_SELECTORS = [
     "[class*='product-grid']",
 
     # Poorvika (Next.js)
+    "div[class*='search-list_search_grid']",
     "div[class*='productfifteen']",
     "div[class*='horizontal-scroll']",
 

@@ -65,10 +65,10 @@ SITE_SELECTORS = {
         "original": "div.yRaY8j, div._3I9_wc, div.kRYCnD, div.gxR4EY",
     },
     "poorvika.com": {
-        "card":     "div[class*='productfifteen_card']",
-        "name":     "h3",
-        "price":    "span[class*='productfifteen_pricedata'], span[class*='pricedata']",
-        "original": "span[class*='productfifteen_price_cut'], del span",
+        "card":     "div[class*='productfifteen_card'], div[class*='product-cardlist_card']",
+        "name":     "h3, b",
+        "price":    "span[class*='productfifteen_pricedata'], span.whitespace-nowrap",
+        "original": "",
     },
     "croma.com": {
         "card":     "li.product-item, div[class*='product-card']",

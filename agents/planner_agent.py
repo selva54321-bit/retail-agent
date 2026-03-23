@@ -47,7 +47,7 @@ COMPETITOR_URL_MAP = {
 
     # ── South India / Tamil Nadu chains ─────────────────────────
     "vasanth":           ("https://www.vasanthandco.com/search?q={q}",                 "dynamic"),
-    "poorvika":          ("https://www.poorvika.com/{q}/s?q={q}",                      "dynamic"),
+    "poorvika":          ("https://www.poorvika.com/catalogsearch/result/?q={q}",      "dynamic"),
     "sangeetha":         ("https://www.sangeetha.com/search?q={q}",                    "dynamic"),
     "girias":            ("https://www.girias.com/catalogsearch/result/?q={q}",        "static"),
     "pai international": ("https://www.pai.in/search?q={q}",                           "static"),

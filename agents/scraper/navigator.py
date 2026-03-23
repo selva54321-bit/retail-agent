@@ -41,7 +41,7 @@ PRODUCT_READY_SELECTORS = [
     '[data-component-type="s-search-result"][data-asin]',  # Amazon
     'div[data-id]',                                         # Flipkart
     'li.product-item',                                      # Magento (Croma)
-    "div[class*='productfifteen_card']",                    # Poorvika
+    'div[class*="productfifteen"], div[class*="product-cardlist"]', # Poorvika
     '[class*="ProductModule"]',                             # Tata Cliq
     '[class*="product-card"]',                              # Generic SPAs
 ]

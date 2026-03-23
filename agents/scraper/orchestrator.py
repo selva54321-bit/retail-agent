@@ -37,7 +37,7 @@ ACTIVE_COMPETITORS = {
     # "croma",
     # "reliance digital",
     # "vasanth and co",
-    # "poorvika",
+    "poorvika",
 }
 
 

@@ -112,18 +112,30 @@ def get_competitors_for_category(category: str) -> list[str]:
 # ─────────────────────────────────────────────────────────────────
 
 DEMO_CATALOG = [
+    # {
+    #     "name":          "LG 32-inch Smart HD TV LM576",
+    #     "sku":           "LG-32-LM576",
+    #     "current_price": 16912,
+    #     "cost":          14375,
+    # },
     {
-        "name":          "LG 32-inch Smart HD TV LM576",
-        "sku":           "LG-32-LM576",
-        "current_price": 16912,
+        "name":          "LG 81.28 cm 32 inch Full HD LED Smart WebOS TV",
+        "sku":           "32LQ570BPSA",
+        "current_price": 17912,
         "cost":          14375,
     },
     {
-        "name":          "Samsung 43-inch Crystal 4K UHD UA43DU8570",
-        "sku":           "SAM-43-DU8570",
+        "name":          "108 cm (43 inches) Crystal 4K Vista Pro Ultra HD Smart LED TV",
+        "sku":           "UA43UE86AFULXL",
         "current_price": 33230,
         "cost":          28245,
     },
+    {
+        "name":         "LG HD Ready AI Smart TV 32LR595B6LA 32 inch",
+        "sku":          "LG-32-LR595B6LA",
+        "current_price": 17912,
+        "cost":         14375,
+    }
 ]
 
 

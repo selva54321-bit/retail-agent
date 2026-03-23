@@ -41,7 +41,7 @@ _config: dict = {
     "provider": "ollama",
 
     # ── Gemini settings ──────────────────────────────────────────
-    "gemini_api_key": os.environ.get("GOOGLE_API_KEY", "AIzaSyChiH_lcTOtEde6jnpmJ0aZ_-JZhAw8KJg"),
+    "gemini_api_key": os.environ.get("GOOGLE_API_KEY", "AIzaSyDBYfLtyOmMVagenXCWVd9E2_eekCX9xdg"),
     "gemini_model":   "gemini-2.5-flash-lite",          # gemini-1.5-pro | gemini-1.5-flash
     "gemini_vision_model": "gemini-2.5-flash-lite",
 
