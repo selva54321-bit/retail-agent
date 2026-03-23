@@ -107,13 +107,12 @@ def run_scraper_subgraph(target: dict) -> list[dict]:
         "catalog_product_name": target.get("catalog_product_name", ""),
         "scrape_method":        target.get("scrape_method", "dynamic"),
 
-        # Will be filled by sub-agents
-        "page_html":      "",
-        "screenshot_png": None,
-        "nav_success":    False,
-        "dom_section":    "",
-        "products":       [],
-        "errors":         [],
+        # Filled by sub-agents
+        "page_html":   "",
+        "nav_success": False,
+        "dom_section": "",
+        "products":    [],
+        "errors":      [],
     }
 
     final_state = SCRAPER_SUBGRAPH.invoke(initial_state)

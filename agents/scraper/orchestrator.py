@@ -33,11 +33,12 @@ from core       import database as db
 ACTIVE_COMPETITORS = {
     "amazon india",
     "flipkart",
-    # Add more here as they are verified:
-    # "croma",
-    # "reliance digital",
-    # "vasanth and co",
     "poorvika",
+    # Add more once these three are verified working:
+    # "croma",
+    # "sangeetha",
+    # "girias",
+    # "vasanth and co",
 }
 
 
@@ -75,8 +76,10 @@ def run_scraper_node(state: AgentState) -> dict:
                 "current_node": "scraper"}
 
     # ── Filter to active competitors only ─────────────────────────
-    # Bypass ACTIVE_COMPETITORS to allow all Planner and Scout combinations to run
-    active_targets = all_targets
+    active_targets = [
+        t for t in all_targets
+        if t.get("competitor_name", "").lower() in ACTIVE_COMPETITORS
+    ]
 
     skipped = len(all_targets) - len(active_targets)
     n_prod  = len({t.get("catalog_sku","") for t in active_targets if t.get("catalog_sku")})
@@ -104,7 +107,10 @@ def run_scraper_node(state: AgentState) -> dict:
     all_records: list[dict] = []
     failed:      list[str]  = []
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    # max_workers=1 because headed (visible) browsers must run sequentially —
+    # multiple browser windows simultaneously cause timing/focus conflicts.
+    # Switch to max_workers=3 if you change navigator to headless=True.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         futures = {
             executor.submit(run_scraper_subgraph, t): t
             for t in active_targets

@@ -8,7 +8,7 @@ fetches the right product page and the result is pre-tagged with the SKU.
 Example for "LG 32-inch Smart HD TV":
   Amazon India → https://www.amazon.in/s?k=LG+32-inch+Smart+HD+TV
   Flipkart     → https://www.flipkart.com/search?q=LG+32-inch+Smart+HD+TV
-  Croma        → https://www.croma.com/searchB?q=LG+32-inch+Smart+HD+TV:relevance&text=LG+32-inch+Smart+HD+TV
+  Croma        → https://www.croma.com/searchB?q=LG+32-inch+Smart+HD+TV
   Vasanth Co   → https://www.vasanthandco.com/search?q=LG+32-inch+Smart+HD+TV
 
 LangChain patterns:
@@ -17,7 +17,6 @@ LangChain patterns:
 """
 
 import re
-from urllib.parse import quote_plus
 
 from langchain_core.prompts        import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -33,49 +32,54 @@ from core       import database as db
 #  {q} will be replaced with the URL-encoded product name.
 # ─────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────
+#  COMPETITOR BASE URL MAP
+#  Navigator will land here, then use the search box interactively.
+#  No query string — navigator types the product name itself.
+# ─────────────────────────────────────────────────────────────────
+
 COMPETITOR_URL_MAP = {
     # ── National e-commerce ──────────────────────────────────────
-    "amazon":            ("https://www.amazon.in/s?k={q}",                             "dynamic"),
-    "flipkart":          ("https://www.flipkart.com/search?q={q}",                     "dynamic"),
-    "croma":             ("https://www.croma.com/searchB?q={q}%3Arelevance&text={q}",   "dynamic"),
-    "reliance digital":  ("https://www.reliancedigital.in/search?q={q}",               "dynamic"),
-    "vijay sales":       ("https://www.vijaysales.com/search/{q}",                     "dynamic"),
-    "vijaysales":        ("https://www.vijaysales.com/search/{q}",                     "dynamic"),
-    "tata cliq":         ("https://www.tatacliq.com/search/?searchCategory=all&q={q}", "dynamic"),
-    "meesho":            ("https://www.meesho.com/search?q={q}",                       "dynamic"),
-    "snapdeal":          ("https://www.snapdeal.com/search?keyword={q}",               "dynamic"),
+    "amazon":            ("https://www.amazon.in",             "dynamic"),
+    "flipkart":          ("https://www.flipkart.com",          "dynamic"),
+    "croma":             ("https://www.croma.com",             "dynamic"),
+    "reliance digital":  ("https://www.reliancedigital.in",    "dynamic"),
+    "vijay sales":       ("https://www.vijaysales.com",        "dynamic"),
+    "vijaysales":        ("https://www.vijaysales.com",        "dynamic"),
+    "tata cliq":         ("https://www.tatacliq.com",          "dynamic"),
+    "meesho":            ("https://www.meesho.com",            "dynamic"),
+    "snapdeal":          ("https://www.snapdeal.com",          "dynamic"),
 
     # ── South India / Tamil Nadu chains ─────────────────────────
-    "vasanth":           ("https://www.vasanthandco.com/search?q={q}",                 "dynamic"),
-    "poorvika":          ("https://www.poorvika.com/catalogsearch/result/?q={q}",      "dynamic"),
-    "sangeetha":         ("https://www.sangeetha.com/search?q={q}",                    "dynamic"),
-    "girias":            ("https://www.girias.com/catalogsearch/result/?q={q}",        "static"),
-    "pai international": ("https://www.pai.in/search?q={q}",                           "static"),
-    "pai":               ("https://www.pai.in/search?q={q}",                           "static"),
-    "lot mobiles":       ("https://www.lotmobiles.com/search?q={q}",                   "static"),
-    "lot":               ("https://www.lotmobiles.com/search?q={q}",                   "static"),
-    "bharath":           ("https://bharathelectronics.com/search?q={q}",               "static"),
-    "myntra":            ("https://www.myntra.com/{q}",                                "dynamic"),
-    "nykaa":             ("https://www.nykaa.com/search/result/?q={q}",                "dynamic"),
+    "vasanth":           ("https://www.vasanthandco.com",      "dynamic"),
+    "poorvika":          ("https://www.poorvika.com",          "dynamic"),
+    "sangeetha":         ("https://www.sangeetha.com",         "dynamic"),
+    "girias":            ("https://www.girias.com",            "dynamic"),
+    "pai international": ("https://www.pai.in",                "dynamic"),
+    "pai":               ("https://www.pai.in",                "dynamic"),
+    "lot mobiles":       ("https://www.lotmobiles.com",        "dynamic"),
+    "lot":               ("https://www.lotmobiles.com",        "dynamic"),
+    "bharath":           ("https://bharathelectronics.com",    "dynamic"),
+    "viveks":            ("https://www.viveks.com",            "dynamic"),
+    "adishwar":          ("https://www.adishwar.com",          "dynamic"),
 }
 
 
 def _make_search_url(competitor_name: str, product_name: str) -> tuple[str, str]:
     """
-    Build a product-specific search URL for a competitor.
-    Returns (url, scrape_method).
+    Return the base site URL for a competitor.
+    The actual search query is typed by the Navigator interactively.
+    Returns (base_url, scrape_method).
     """
     comp_lower = competitor_name.lower().strip()
-    q          = quote_plus(product_name)
 
-    # Match against known templates
-    for key, (template, method) in COMPETITOR_URL_MAP.items():
+    for key, (base_url, method) in COMPETITOR_URL_MAP.items():
         if key in comp_lower:
-            return template.format(q=q), method
+            return base_url, method
 
-    # Fallback: try to construct a domain from the name
+    # Fallback: construct base domain from name
     domain = re.sub(r"[^a-z0-9]", "", comp_lower)
-    return f"https://www.{domain}.com/search?q={q}", "dynamic"
+    return f"https://www.{domain}.com", "dynamic"
 
 
 def _product_slug(product_name: str) -> str:
@@ -205,10 +209,46 @@ def run_planner_node(state: AgentState) -> dict:
     print(f"  Catalog: {len(profile.catalog)} products × "
           f"{len(profile.known_competitors)} known competitors")
 
-    # ── Use only the category-mapped competitors from intake ──
+    # ── Start with known competitors from intake ──────────────
     all_competitors = list(profile.known_competitors)
-    strategy  = profile.pricing_strategy
-    reasoning = f"Category-mapped plan for {profile.category} in {profile.location}."
+
+    # ── Ask LLM to suggest additional competitors ─────────────
+    profile_summary = (
+        f"Store: {profile.store_name}\n"
+        f"Category: {profile.category} | Location: {profile.location}\n"
+        f"Known competitors: {', '.join(profile.known_competitors)}\n"
+        f"Strategy: {profile.pricing_strategy}"
+    )
+    try:
+        chain    = _build_planner_chain()
+        llm_data = chain.invoke({"profile_summary": profile_summary})
+        extras   = llm_data.get("additional_competitors", [])
+        strategy = llm_data.get("strategy_framework", profile.pricing_strategy)
+        reasoning = llm_data.get("reasoning", "")
+
+        existing_lower = {c.lower() for c in all_competitors}
+        for c in extras:
+            c = str(c).strip()
+            # ── Filter out garbage suggestions ─────────────────
+            # Reject if: too long (a sentence, not a name), contains
+            # conditional phrases, parentheticals, or is a generic description
+            if (not c
+                    or len(c) > 40
+                    or "(" in c
+                    or c.lower().startswith("local ")
+                    or "stores in" in c.lower()
+                    or "if they" in c.lower()
+                    or " or " in c.lower()):
+                print(f"  ✗ Filtered invalid suggestion: '{c}'")
+                continue
+            if c.lower() not in existing_lower:
+                all_competitors.append(c)
+                print(f"  + LLM suggested: {c}")
+
+    except Exception as e:
+        print(f"  [Planner] LLM unavailable ({str(e)[:60]}), using known competitors only.")
+        strategy  = profile.pricing_strategy
+        reasoning = f"Rule-based plan for {profile.category} in {profile.location}."
 
     # ── Generate one URL per (competitor × product) ───────────
     targets = _build_targets(

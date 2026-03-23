@@ -1,0 +1,136 @@
+(retail) PS D:\projects\generative ai\retailer agent> python main.py       
+
+╔══════════════════════════════════════════════════════════╗
+║   RetailAgent — LangChain + LangGraph Edition            ║
+║   Automated Competitor Price Monitoring                  ║
+║   Multi-Agent: StateGraph | LCEL | Structured Output     ║
+╚══════════════════════════════════════════════════════════╝
+[DB] Initialized at retailagent.db
+
+  ┌──────────────────────────────────────────────────────┐
+  │  Select LLM backend:                                 │
+  │                                                      │
+  │   1 → Gemini  (model: gemini-2.5-flash-lite        │
+  │   2 → Ollama  (model: qwen2:1.5b                   │
+  │   3 → Grok    (model: grok-3-mini                  │
+  │                                                      │
+  │   Edit core/llm.py to change model names / keys     │
+  └──────────────────────────────────────────────────────┘
+  Your choice [1/2/3]: 1
+  [LLM] Provider → GEMINI  (model: gemini-2.5-flash-lite)
+
+  ✅  GEMINI ready (gemini-2.5-flash-lite)
+
+[DB] Initialized at retailagent.db
+
+════════════════════════════════════════════════════════════
+  RetailAgent LangGraph Cycle: 7cb200ee
+  Nodes: intake→planner→scraper→normalizer→analyst→pricing→reporter
+════════════════════════════════════════════════════════════
+
+════════════════════════════════════════════════════════════
+  RETAILAGENT — Retailer Onboarding
+  Powered by LangChain LCEL
+════════════════════════════════════════════════════════════
+
+  Agent: Hi there! That's fantastic! I'm happy to help you get set up with RetailAgent.
+
+First off, could you tell me your store's name and what kind of products you sell?
+
+  You:
+  (Interrupted — loading demo TV shop profile)
+
+[Planner] Building product-level monitoring plan...
+  Catalog: 3 products × 4 known competitors
+  + LLM suggested: Pai International
+  + LLM suggested: Girias
+  + LLM suggested: Sangeetha
+  [Planner] 21 search targets registered (7 competitors × 3 products)
+    • Amazon India
+    • Flipkart
+    • Poorvika
+    • Croma
+    • Pai International
+    • Girias
+    • Sangeetha
+
+[Scout] Discovering local competitors for televisions in Saibaba Colony, Coimbatore, Tamil Nadu...
+  [Scout] Category has predefined competitors — skipping discovery.
+
+[Scraper] Active: 7 targets (1 products × 7 competitors)
+
+  Sub-graph per target: [navigator] → [fetcher] → [extractor]
+
+    [Navigator] 🌐 Amazon India — searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+    [Navigator] Site: https://www.amazon.in
+    [Navigator] 🌐 Croma — searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+    [Navigator] Site: https://www.croma.com
+    [Navigator] 🌐 Flipkart — searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+    [Navigator] Site: https://www.flipkart.com
+    [Navigator] Opening https://www.amazon.in ...
+    [Navigator] Opening https://www.flipkart.com ...
+    [Navigator] Opening https://www.croma.com ...
+    [Navigator] Search box: input[title='Search for Products, Brands and More']
+    [Navigator] ✓ Search box found — typing query...
+    [Navigator] ✗ 'ElementHandle' object has no attribute 'triple_click'
+    [Navigator] 🌐 Girias — searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+  ✗ Flipkart | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] Site: https://www.girias.com
+    [Navigator] Opening https://www.girias.com ...
+    [Navigator] ✗ Could not find search box on https://www.amazon.in
+    [Navigator] 🌐 Pai International — searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+  ✗ Amazon India | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] Site: https://www.pai.in
+    [Navigator] Opening https://www.pai.in ...
+    [Navigator] ✗ Could not find search box on https://www.croma.com
+    [Navigator] 🌐 Poorvika — searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+  ✗ Croma | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] Site: https://www.poorvika.com
+    [Navigator] Opening https://www.poorvika.com ...
+    [Navigator] Search box: input[placeholder*='Search']
+    [Navigator] ✓ Search box found — typing query...
+    [Navigator] ✗ Page.goto: net::ERR_NAME_NOT_RESOLVED at https://www.pai.in/
+Call log:
+  - navig
+    [Navigator] 🌐 Sangeetha — searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+    [Navigator] Site: https://www.sangeetha.com
+  ✗ Pai International | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] ✗ 'ElementHandle' object has no attribute 'triple_click'
+  ✗ Poorvika | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] Opening https://www.sangeetha.com ...
+    [Navigator] ✗ Could not find search box on https://www.girias.com
+  ✗ Girias | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] Search box: input[placeholder*='Search']
+    [Navigator] ✓ Search box found — typing query...
+
+
+  ██████╗ ███████╗████████╗ █████╗ ██╗██╗      █████╗  ██████╗ ███████╗███╗  ██╗████████╗
+  RetailAgent — Competitive Price Intelligence
+  Store: The TV Shop Coimbatore  |  Category: televisions  |  23 Mar 2026 15:49
+  No price data available yet.
+
+══════════════════════════════════════════════════════════════════════
+  💡 PRICING RECOMMENDATIONS
+──────────────────────────────────────────────────────────────────────
+  ✓ No price changes recommended.
+
+══════════════════════════════════════════════════════════════════════
+  📰 MORNING BRIEFING
+──────────────────────────────────────────────────────────────────────
+  No data collected this cycle.
+
+══════════════════════════════════════════════════════════════════════
+  ⚡ CYCLE SUMMARY
+──────────────────────────────────────────────────────────────────────
+  Cycle ID:                   7cb200ee
+  Started:                    2026-03-23 15:47:43
+  Records scraped:            0
+  Products matched:           0
+  Analytics computed:         0
+  Recommendations:            0
+  Alerts raised:              0
+
+  Errors encountered:
+    • Scraper: 7 targets no data
+
+══════════════════════════════════════════════════════════════════════

@@ -125,7 +125,7 @@ DEMO_CATALOG = [
         "cost":          14375,
     },
     {
-        "name":          "108 cm (43 inches) Crystal 4K Vista Pro Ultra HD Smart LED TV",
+        "name":          "Samsung 108 cm (43 inches) Crystal 4K Vista Pro Ultra HD Smart LED TV",
         "sku":           "UA43UE86AFULXL",
         "current_price": 33230,
         "cost":          28245,
