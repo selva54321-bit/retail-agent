@@ -30,14 +30,25 @@ from core       import database as db
 #  Expand this list once Amazon + Flipkart are confirmed working.
 # ─────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────
+#  ACTIVE COMPETITORS
+#  These are the ONLY sites the scraper will actually visit.
+#  Names must match competitor_name values in the DB (case-insensitive).
+#  Planner registers the user's known list → Scout adds local chains →
+#  Orchestrator filters both down to this set before scraping.
+# ─────────────────────────────────────────────────────────────────
+
 ACTIVE_COMPETITORS = {
     "amazon india",
     "flipkart",
-    # Add more here as they are verified:
-    # "croma",
-    # "reliance digital",
-    # "vasanth and co",
     "poorvika",
+    "poorvika mobiles",
+    "girias",
+    "darling",
+    "darling electronics",
+    "reliance digital",
+    "vasanth and co",
+    "vasanthandco",
 }
 
 
@@ -106,7 +117,10 @@ def run_scraper_node(state: AgentState) -> dict:
     all_records: list[dict] = []
     failed:      list[str]  = []
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    # max_workers=1 because headed (visible) browsers must run sequentially —
+    # multiple browser windows simultaneously cause timing/focus conflicts.
+    # Switch to max_workers=3 if you change navigator to headless=True.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         futures = {
             executor.submit(run_scraper_subgraph, t): t
             for t in active_targets

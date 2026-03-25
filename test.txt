@@ -1,3 +1,4 @@
+(base) PS D:\projects\generative ai\retailer agent> conda activate retail
 (retail) PS D:\projects\generative ai\retailer agent> python main.py --demo
 
 ╔══════════════════════════════════════════════════════════╗
@@ -24,7 +25,7 @@
 [DB] Initialized at retailagent.db
 
 ════════════════════════════════════════════════════════════
-  RetailAgent LangGraph Cycle: e2217132
+  RetailAgent LangGraph Cycle: 16285773
   Nodes: intake→planner→scraper→normalizer→analyst→pricing→reporter
 ════════════════════════════════════════════════════════════
 
@@ -42,25 +43,14 @@
     • Girias
     • Sangeetha
 
-[Scout] Looking up regional chains for televisions in Saibaba Colony, Coimbatore, Tamil Nadu...
-  ✓ Already registered: Poorvika
-  ✓ Already registered: Sangeetha
-  ✓ Already registered: Girias
-  + Adding: Vasanth and Co → https://www.vasanthandco.com
-  + Adding: Sathya → https://www.sathya.in
-  + Adding: Darling → https://www.darling.in
-  ✓ Already registered: Pai International
-  + Adding: Lot Mobiles → https://www.lotmobiles.com
-  + Adding: Viveks → https://www.viveks.com
-[Scout] Done — 5 regional chain(s) added (15 targets total):
-  + Darling
-  + Lot Mobiles
-  + Sathya
-  + Vasanth and Co
-  + Viveks
+[Scout] Searching for televisions shops in Saibaba Colony...
+  [Scout] Running 3 queries for shops in Saibaba Colony...
+  [Scout] Got 11 snippets — extracting shops...
+  [Scout] LLM found 0 candidate shops
+  [Scout] No new competitors found.
 
-[Scraper] Active: 3 targets (1 products × 3 competitors)
-  Skipped 9 targets from non-active competitors (expand ACTIVE_COMPETITORS to add more)
+[Scraper] Active: 4 targets (1 products × 4 competitors)
+  Skipped 3 targets from non-active competitors (expand ACTIVE_COMPETITORS to add more)
 
   Sub-graph per target: [navigator] → [fetcher] → [extractor]
 
@@ -71,9 +61,9 @@
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([data-component-type="s-search-result"][data-asin])
-    [Navigator] ✓ Results HTML captured (581,283 chars)
-    [Fetcher] Processing 581,283 chars of HTML...
-    [Fetcher] ✓ Focused section: 74,347 chars
+    [Navigator] ✓ Results HTML captured (665,214 chars)
+    [Fetcher] Processing 665,214 chars of HTML...
+    [Fetcher] ✓ Focused section: 116,896 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on amazon.in
     [Extractor] ↕ 0 product cards with valid prices found
     [Navigator] 🌐 Flipkart
@@ -82,112 +72,37 @@
     [Navigator] Opening https://www.flipkart.com ...
     [Navigator] ✓ Search box: input[title='Search for Products, Brands and More']
     [Navigator] ✓ Search box located — typing...
-    [Navigator] Submitting search...
-    [Navigator] ✓ Product cards ready (div[data-id])
-    [Navigator] ✓ Results HTML captured (254,552 chars)
-    [Fetcher] Processing 254,552 chars of HTML...
-    [Fetcher] ↕ No section found — stripped noise: 110,619 chars
-    [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on flipkart.com
-    [Extractor] ✓ ₹23,247  conf=0.66  'LG 80 cm (32 inch) HD Ready LED Smart WebOS TV'
+    [Navigator] ✗ Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("input[title='Search for
+    [Navigator] 🌐 Girias
+  ✗ Flipkart | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+    [Navigator] Opening https://www.girias.com ...
+    [Navigator] ✗ Search box not found on https://www.girias.com
     [Navigator] 🌐 Poorvika
-  ✓ Flipkart | LG HD Ready AI Smart TV 32LR59 — 3 record(s)
+  ✗ Girias | LG HD Ready AI Smart TV 32LR59 — no data
     [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
     [Navigator] Opening https://www.poorvika.com ...
     [Navigator] ✓ Search box: input[placeholder*='Search' i]
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([class*="product-card"])
-    [Navigator] ✓ Results HTML captured (258,266 chars)
-    [Fetcher] Processing 258,266 chars of HTML...
+    [Navigator] ✓ Results HTML captured (123,245 chars)
+    [Fetcher] Processing 123,245 chars of HTML...
     [Fetcher] ✓ Focused section: 2,520 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on poorvika.com
     [Extractor] ✓ ₹16,590  conf=0.98  'LG HD Ready AI Smart TV, 32LR595B6LA ( 32 inch )'
   ✓ Poorvika | LG HD Ready AI Smart TV 32LR59 — 1 record(s)
 
-[Scraper] Done — 4 price records from 2/3 targets  |  avg conf: 0.71
-  No data for 1 target(s)
+[Scraper] Done — 1 price records from 1/4 targets  |  avg conf: 0.98
+  No data for 3 target(s)
 
-[Normalizer] Matching 4 scraped products to catalog...
-  [Normalizer] Chroma/embeddings unavailable (Error embedding content (NOT_FOUND): 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/text-embedding-004 is not found for API version v1beta, or is not supported for embedContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}), using fallback.
-[Normalizer] 4 matches | 4 new (incl. pre-tagged) | 0 cached
+[Normalizer] Matching 1 scraped products to catalog...
+  [Normalizer] Chroma/embeddings unavailable (Error embedding content (NOT_FOUND): 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/text-embedding-004 is not found for API version v1beta, or is not supported for embedContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}), using fallback. 
+[Normalizer] 1 matches | 1 new (incl. pre-tagged) | 0 cached
 
-[Analyst] Running analytics pipeline on 4 matches...
+[Analyst] Running analytics pipeline on 1 matches...
 [Analyst] 1 products analyzed | 1 alerts | cheapest on 0/1
 
 [Pricing] Generating recommendations for 1 products...
-  ↓ LG HD Ready AI Smart TV 32LR595B6LA 32 inch   ₹17,912 → ₹16,590 [reduce] 85%
-[Pricing] 1 recs | LLM=1 | rule=0 | actionable=1
-[Queue Review] 1 recommendations queued for approval.
-
-[Reporter] Generating morning briefing...
-
-
-  ██████╗ ███████╗████████╗ █████╗ ██╗██╗      █████╗  ██████╗ ███████╗███╗  ██╗████████╗
-  RetailAgent — Competitive Price Intelligence
-  Store: The TV Shop Coimbatore  |  Category: televisions  |  23 Mar 2026 22:56
-
-══════════════════════════════════════════════════════════════════════
-  📊 PRICE COMPARISON TABLE
-──────────────────────────────────────────────────────────────────────
-  Product                                 Yours       Flipkart       Poorvika   Rank   Gap%
-  ───────────────────────────────────────────────────────────────────────────────────────
-  LG HD Ready AI Smart TV 32LR   ₹     17,912 ₹     20,559 ₹     16,590      2  +8.0% ─
-
-  Cheapest on 0/1 products (0% of catalog)
-
-══════════════════════════════════════════════════════════════════════
-  💡 PRICING RECOMMENDATIONS
-──────────────────────────────────────────────────────────────────────
-  1 actionable | 0 hold
-
-  ↓ LG HD Ready AI Smart TV 32LR595B6LA 32 inch  
-    Price:  ₹17,912  →  ₹16,590 (-7.4%)  [reduce]  conf=85%
-    ↳ The retailer is currently priced 8.0% above the cheapest competitor (Poorvika). To achieve competiti 
-
-
-══════════════════════════════════════════════════════════════════════
-  🔔 ALERTS
-──────────────────────────────────────────────────────────────────────
-  📊 8.0% above cheapest (Poorvika @ ₹16590)
-
-══════════════════════════════════════════════════════════════════════
-  📰 MORNING BRIEFING
-──────────────────────────────────────────────────────────────────────
-  📊 COMPETITIVE BRIEFING — 23 Mar 2026, 10:56 PM
-  Store: The TV Shop Coimbatore
-  ──────────────────────────────────────────────────
-
-  MARKET POSITION
-  You are cheapest on 0/1 products (0%). 1 products are priced more than 5% above the cheapest competitor. 
-
-  💡 TOP RECOMMENDATIONS
-    ↓ LG HD Ready AI Smart TV 32LR595B6LA 32 inch: ₹17,912 → ₹16,590 (-7.4%)
-      → The retailer is currently priced 8.0% above the cheapest competitor (Poorvika). To achieve competiti
-
-══════════════════════════════════════════════════════════════════════
-  ⚡ CYCLE SUMMARY
-──────────────────────────────────────────────────────────────────────
-  Cycle ID:                   e2217132
-  Started:                    2026-03-23 22:54:00
-  Records scraped:            4
-  Products matched:           4
-  Analytics computed:         1
-  Recommendations:            1
-  Alerts raised:              1
-
-  Errors encountered:
-    • Scraper: 1 targets no data
-
-══════════════════════════════════════════════════════════════════════
-
-
-══════════════════════════════════════════════════════════════════════
-  ✅ RECOMMENDATION APPROVAL
-──────────────────────────────────────────────────────────────────────
-  1 price changes are waiting for your approval.
-  Options: a=approve, r=reject, s=skip, q=approve all
-
-  Product: LG HD Ready AI Smart TV 32LR595B6LA 32 inch
-  Change:  ₹17,912 → ₹16,590 (-7.4%)
-  Reason:  The retailer is currently priced 8.0% above the cheapest competitor (Poorvika). To achieve competiti
-  [a/r/s/q] →

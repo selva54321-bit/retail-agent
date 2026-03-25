@@ -55,12 +55,15 @@ COMPETITOR_URL_MAP = {
     "poorvika":          ("https://www.poorvika.com",          "dynamic"),
     "sangeetha":         ("https://www.sangeetha.com",         "dynamic"),
     "girias":            ("https://www.girias.com",            "dynamic"),
+    "darling":           ("https://www.darling.in",            "dynamic"),
+    "sathya":            ("https://www.sathya.in",             "dynamic"),
     "pai international": ("https://www.pai.in",                "dynamic"),
     "pai":               ("https://www.pai.in",                "dynamic"),
     "lot mobiles":       ("https://www.lotmobiles.com",        "dynamic"),
     "lot":               ("https://www.lotmobiles.com",        "dynamic"),
     "bharath":           ("https://bharathelectronics.com",    "dynamic"),
     "viveks":            ("https://www.viveks.com",            "dynamic"),
+    "adishwar":          ("https://www.adishwar.com",          "dynamic"),
 }
 
 
