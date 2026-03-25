@@ -85,21 +85,14 @@ def run_scraper_node(state: AgentState) -> dict:
         return {"scraped_records": [], "scraping_complete": True,
                 "current_node": "scraper"}
 
-    # ── Filter to active competitors only ─────────────────────────
-    active_targets = [
-        t for t in all_targets
-        if t.get("competitor_name", "").lower() in ACTIVE_COMPETITORS
-    ]
+    # ── Use all registered targets ───────────────────────────────
+    active_targets = all_targets
 
-    skipped = len(all_targets) - len(active_targets)
     n_prod  = len({t.get("catalog_sku","") for t in active_targets if t.get("catalog_sku")})
     n_comp  = len({t.get("competitor_name","") for t in active_targets})
 
     print(f"\n[Scraper] Active: {len(active_targets)} targets "
           f"({n_prod} products × {n_comp} competitors)")
-    if skipped:
-        print(f"  Skipped {skipped} targets from non-active competitors "
-              f"(expand ACTIVE_COMPETITORS to add more)")
 
     if not active_targets:
         print("  No active competitor targets found in registry.")

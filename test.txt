@@ -1,4 +1,3 @@
-(base) PS D:\projects\generative ai\retailer agent> conda activate retail
 (retail) PS D:\projects\generative ai\retailer agent> python main.py --demo
 
 ╔══════════════════════════════════════════════════════════╗
@@ -25,7 +24,7 @@
 [DB] Initialized at retailagent.db
 
 ════════════════════════════════════════════════════════════
-  RetailAgent LangGraph Cycle: 22b9da95
+  RetailAgent LangGraph Cycle: c2e8b52d
   Nodes: intake→planner→scraper→normalizer→analyst→pricing→reporter
 ════════════════════════════════════════════════════════════
 
@@ -48,8 +47,7 @@
   + Reliance Digital
   + Sathya Agencies
 
-[Scraper] Active: 4 targets (1 products × 4 competitors)
-  Skipped 2 targets from non-active competitors (expand ACTIVE_COMPETITORS to add more)
+[Scraper] Active: 6 targets (1 products × 6 competitors)
 
   Sub-graph per target: [navigator] → [fetcher] → [extractor]
 
@@ -60,22 +58,27 @@
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([data-component-type="s-search-result"][data-asin])
-    [Navigator] ✓ Results HTML captured (851,972 chars)
-    [Fetcher] Processing 851,972 chars of HTML...
-    [Fetcher] ✓ Focused section: 256,902 chars
+    [Navigator] ✓ Results HTML captured (854,059 chars)
+    [Fetcher] Processing 854,059 chars of HTML...
+    [Fetcher] ✓ Focused section: 255,743 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on amazon.in
     [Extractor] ↕ 0 product cards with valid prices found
-    [Navigator] 🌐 Flipkart
-    [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+    [Navigator] 🌐 Croma
   ✗ Amazon India | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+    [Navigator] Opening https://www.croma.com ...
+    [Navigator] ✗ Search box not found on https://www.croma.com
+    [Navigator] 🌐 Flipkart
+  ✗ Croma | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
     [Navigator] Opening https://www.flipkart.com ...
     [Navigator] ✓ Search box: input[title='Search for Products, Brands and More']
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready (div[data-id])
-    [Navigator] ✓ Results HTML captured (277,886 chars)
-    [Fetcher] Processing 277,886 chars of HTML...
-    [Fetcher] ↕ No section found — stripped noise: 112,368 chars
+    [Navigator] ✓ Results HTML captured (278,433 chars)
+    [Fetcher] Processing 278,433 chars of HTML...
+    [Fetcher] ↕ No section found — stripped noise: 112,615 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on flipkart.com
     [Extractor] ✓ ₹23,247  conf=0.66  'LG 80 cm (32 inch) HD Ready LED Smart WebOS TV'
     [Navigator] 🌐 Poorvika
@@ -86,8 +89,8 @@
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([class*="product-card"])
-    [Navigator] ✓ Results HTML captured (259,242 chars)
-    [Fetcher] Processing 259,242 chars of HTML...
+    [Navigator] ✓ Results HTML captured (124,188 chars)
+    [Fetcher] Processing 124,188 chars of HTML...
     [Fetcher] ✓ Focused section: 2,520 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on poorvika.com
     [Extractor] ✓ ₹14,990  conf=0.98  'LG HD Ready AI Smart TV, 32LR595B6LA ( 32 inch )'
@@ -97,105 +100,27 @@
     [Navigator] Opening https://www.reliancedigital.in ...
     [Navigator] ✓ Search box: input[class*='search' i]
     [Navigator] ✓ Search box located — typing...
+    [Navigator] ✗ Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("input[class*='search' i]
+    [Navigator] 🌐 Sathya Agencies
+  ✗ Reliance Digital | LG HD Ready AI Smart TV 32LR59 — no data
+    [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+    [Navigator] Opening https://www.sathya.in ...
+    [Navigator] ✓ Search box: input[type='search']
+    [Navigator] ✓ Search box located — typing...
+    [Navigator] Submitting search...
+    [Navigator] ✓ ₹ prices detected
+    [Navigator] ✓ Results HTML captured (224,652 chars)
+    [Fetcher] Processing 224,652 chars of HTML...
+    [Fetcher] ✓ Focused section: 72,149 chars
+    [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on sathya.in
+    [Extractor] ↕ 0 product cards with valid prices found
+  ✗ Sathya Agencies | LG HD Ready AI Smart TV 32LR59 — no data
 
-[Scraper] Done — 4 price records from 2/3 targets  |  avg conf: 0.71
-  No data for 1 target(s)
+[Scraper] Done — 4 price records from 2/6 targets  |  avg conf: 0.71
+  No data for 4 target(s)
 
 [Normalizer] Matching 4 scraped products to catalog...
-  [Normalizer] Chroma/embeddings unavailable (Error embeddin
-
-  ██████╗ ███████╗████████╗ █████╗ ██╗██╗      █████╗  ██████╗ ███████╗███╗  ██╗████████╗
-  RetailAgent — Competitive Price Intelligence
-  Store: The TV Shop Coimbatore  |  Category: televisions  |  25 Mar 2026 09:23
-
-══════════════════════════════════════════════════════════════════════
-  📊 PRICE COMPARISON TABLE
-──────────────────────────────────────────────────────────────────────
-  Product                                 Yours       Flipkart       Poorvika   Rank   Gap%
-  ───────────────────────────────────────────────────────────────────────────────────────
-  LG HD Ready AI Smart TV 32LR   ₹     17,912 ₹     20,559 ₹     14,990      2 +19.5% ─
-
-  Cheapest on 0/1 products (0% of catalog)
-
-══════════════════════════════════════════════════════════════════════
-  💡 PRICING RECOMMENDATIONS
-──────────────────────────────────────────────────────────────────────
-  1 actionable | 0 hold
-
-  ↓ LG HD Ready AI Smart TV 32LR595B6LA 32 inch  
-    Price:  ₹17,912  →  ₹16,100 (-10.1%)  [reduce]  conf=85%
-    ↳ The retailer is currently priced significantly above the cheapest competitor, and their price rank i
-    ⚙ Guardrail: Margin floor applied (min ₹16100).
-
-
-══════════════════════════════════════════════════════════════════════
-  🔔 ALERTS
-──────────────────────────────────────────────────────────────────────
-  📊 19.5% above cheapest (Poorvika @ ₹14990)
-
-══════════════════════════════════════════════════════════════════════
-  📰 MORNING BRIEFING
-──────────────────────────────────────────────────────────────────────
-  Good morning.
-
-  Your TV pricing is currently running about 19.5% higher than the competition.
-
-  Your most urgent pricing opportunity today is the LG HD Ready AI Smart TV 32LR595B6LA 32 inch. We recommend reducing its price from ₹17,912 to ₹16,100 to match the market.
-
-  No significant competitor moves or anomalies to report today.
-
-  For today, focus on adjusting that LG TV price to bring you back in line with the market.
-
-══════════════════════════════════════════════════════════════════════
-  ⚡ CYCLE SUMMARY
-──────────────────────────────────────────────────────────────────────
-  Cycle ID:                   22b9da95
-  Started:                    2026-03-25 09:19:21
-  Records scraped:            4
-  Products matched:           4
-  Analytics computed:         1
-  Recommendations:            1
-  Alerts raised:              1
-
-  Errors encountered:
-    • Scraper: 2 targets no data
-
-
-  For today, focus on adjusting that LG TV price to bring you back in line with the market.
-
-══════════════════════════════════════════════════════════════════════
-  ⚡ CYCLE SUMMARY
-──────────────────────────────────────────────────────────────────────
-  Cycle ID:                   22b9da95
-  Started:                    2026-03-25 09:19:21
-  Records scraped:            4
-  Products matched:           4
-  Analytics computed:         1
-  Recommendations:            1
-  Alerts raised:              1
-
-  Errors encountered:
-    • Scraper: 2 targets no data
-
-  Alerts raised:              1
-
-  Errors encountered:
-    • Scraper: 2 targets no data
-
-
-══════════════════════════════════════════════════════════════════════
-
-
-══════════════════════════════════════════════════════════════════════
-  ✅ RECOMMENDATION APPROVAL
-──────────────────────────────────────────────────────────────────────
-  1 price changes are waiting for your approval.
-  Options: a=approve, r=reject, s=skip, q=approve all
-
-  Product: LG HD Ready AI Smart TV 32LR595B6LA 32 inch
-  Change:  ₹17,912 → ₹16,100 (-10.1%)
-  Reason:  The retailer is currently priced significantly above the cheapest competitor, and their price rank i       
-  [a/r/s/q] →
-
-
-
+  [Normalizer] Chroma/embeddings unavailable (Error embedding content (NOT_FOUND): 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/text-embedding-004 is not found for API version v1beta, or is not supported for embedContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}), using fallback.
+[Normalizer] 4 matches | 4 new (incl. pre-tagged) | 0 cac
