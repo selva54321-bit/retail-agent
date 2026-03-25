@@ -51,11 +51,11 @@ COMPETITOR_URL_MAP = {
     "snapdeal":          ("https://www.snapdeal.com",          "dynamic"),
 
     # ── South India / Tamil Nadu chains ─────────────────────────
-    "vasanth":           ("https://www.vasanthandco.com",      "dynamic"),
+    "vasanth":           ("https://www.vasanthandco.in",       "dynamic"),
     "poorvika":          ("https://www.poorvika.com",          "dynamic"),
     "sangeetha":         ("https://www.sangeetha.com",         "dynamic"),
     "girias":            ("https://www.girias.com",            "dynamic"),
-    "darling":           ("https://www.darling.in",            "dynamic"),
+    "darling":           ("https://www.darlingretail.com",     "dynamic"),
     "sathya":            ("https://www.sathya.in",             "dynamic"),
     "pai international": ("https://www.pai.in",                "dynamic"),
     "pai":               ("https://www.pai.in",                "dynamic"),

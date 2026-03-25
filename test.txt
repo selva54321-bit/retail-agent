@@ -24,7 +24,7 @@
 [DB] Initialized at retailagent.db
 
 ════════════════════════════════════════════════════════════
-  RetailAgent LangGraph Cycle: c2e8b52d
+  RetailAgent LangGraph Cycle: d91e34f6
   Nodes: intake→planner→scraper→normalizer→analyst→pricing→reporter
 ════════════════════════════════════════════════════════════
 
@@ -58,39 +58,47 @@
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([data-component-type="s-search-result"][data-asin])
-    [Navigator] ✓ Results HTML captured (854,059 chars)
-    [Fetcher] Processing 854,059 chars of HTML...
-    [Fetcher] ✓ Focused section: 255,743 chars
+    [Navigator] ✓ Results HTML captured (822,353 chars)
+    [Fetcher] Processing 822,353 chars of HTML...
+    [Fetcher] ✓ Focused section: 251,795 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on amazon.in
     [Extractor] ↕ 0 product cards with valid prices found
     [Navigator] 🌐 Croma
+    [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
   ✗ Amazon India | LG HD Ready AI Smart TV 32LR59 — no data
-    [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
     [Navigator] Opening https://www.croma.com ...
-    [Navigator] ✗ Search box not found on https://www.croma.com
+    [Navigator] ✓ Search box: #searchV2
+    [Navigator] ✓ Search box located — typing...
+    [Navigator] Submitting search...
+    [Navigator] ✓ Product cards ready (li.product-item)
+    [Navigator] ✓ Results HTML captured (573,999 chars)
+    [Fetcher] Processing 573,999 chars of HTML...
+    [Fetcher] ✓ Focused section: 72,630 chars
+    [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on croma.com
+    [Extractor] ✓ ₹14,490  conf=0.60  'LG LM56 80cm (32 Inch) HD Ready LED Smart WebOS TV'
     [Navigator] 🌐 Flipkart
-  ✗ Croma | LG HD Ready AI Smart TV 32LR59 — no data
     [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+  ✓ Croma | LG HD Ready AI Smart TV 32LR59 — 3 record(s)
     [Navigator] Opening https://www.flipkart.com ...
     [Navigator] ✓ Search box: input[title='Search for Products, Brands and More']
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready (div[data-id])
-    [Navigator] ✓ Results HTML captured (278,433 chars)
-    [Fetcher] Processing 278,433 chars of HTML...
-    [Fetcher] ↕ No section found — stripped noise: 112,615 chars
+    [Navigator] ✓ Results HTML captured (277,343 chars)
+    [Fetcher] Processing 277,343 chars of HTML...
+    [Fetcher] ↕ No section found — stripped noise: 111,622 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on flipkart.com
     [Extractor] ✓ ₹23,247  conf=0.66  'LG 80 cm (32 inch) HD Ready LED Smart WebOS TV'
     [Navigator] 🌐 Poorvika
-    [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
   ✓ Flipkart | LG HD Ready AI Smart TV 32LR59 — 3 record(s)
+    [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
     [Navigator] Opening https://www.poorvika.com ...
     [Navigator] ✓ Search box: input[placeholder*='Search' i]
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([class*="product-card"])
-    [Navigator] ✓ Results HTML captured (124,188 chars)
-    [Fetcher] Processing 124,188 chars of HTML...
+    [Navigator] ✓ Results HTML captured (124,186 chars)
+    [Fetcher] Processing 124,186 chars of HTML...
     [Fetcher] ✓ Focused section: 2,520 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on poorvika.com
     [Extractor] ✓ ₹14,990  conf=0.98  'LG HD Ready AI Smart TV, 32LR595B6LA ( 32 inch )'
@@ -100,27 +108,36 @@
     [Navigator] Opening https://www.reliancedigital.in ...
     [Navigator] ✓ Search box: input[class*='search' i]
     [Navigator] ✓ Search box located — typing...
-    [Navigator] ✗ Locator.click: Timeout 30000ms exceeded.
-Call log:
-  - waiting for locator("input[class*='search' i]
+    [Navigator] Submitting search...
+    [Navigator] ⚠ Results wait timed out — using what loaded
+    [Navigator] ✓ Results HTML captured (334,894 chars)
+    [Fetcher] Processing 334,894 chars of HTML...
+    [Fetcher] ↕ No section found — stripped noise: 37,491 chars
+    [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on reliancedigital.in
+    [Extractor] ↕ 0 product cards with valid prices found
     [Navigator] 🌐 Sathya Agencies
-  ✗ Reliance Digital | LG HD Ready AI Smart TV 32LR59 — no data
     [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+  ✗ Reliance Digital | LG HD Ready AI Smart TV 32LR59 — no data
     [Navigator] Opening https://www.sathya.in ...
-    [Navigator] ✓ Search box: input[type='search']
+    [Navigator] ✓ Search box: input[name='q']
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ ₹ prices detected
-    [Navigator] ✓ Results HTML captured (224,652 chars)
-    [Fetcher] Processing 224,652 chars of HTML...
-    [Fetcher] ✓ Focused section: 72,149 chars
+    [Navigator] ✓ Results HTML captured (224,646 chars)
+    [Fetcher] Processing 224,646 chars of HTML...
+    [Fetcher] ✓ Focused section: 72,139 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on sathya.in
     [Extractor] ↕ 0 product cards with valid prices found
   ✗ Sathya Agencies | LG HD Ready AI Smart TV 32LR59 — no data
 
-[Scraper] Done — 4 price records from 2/6 targets  |  avg conf: 0.71
-  No data for 4 target(s)
+[Scraper] Done — 7 price records from 3/6 targets  |  avg conf: 0.59
+  No data for 3 target(s)
 
-[Normalizer] Matching 4 scraped products to catalog...
+[Normalizer] Matching 7 scraped products to catalog...
   [Normalizer] Chroma/embeddings unavailable (Error embedding content (NOT_FOUND): 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/text-embedding-004 is not found for API version v1beta, or is not supported for embedContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}), using fallback.
-[Normalizer] 4 matches | 4 new (incl. pre-tagged) | 0 cac
+[Normalizer] 7 matches | 7 new (incl. pre-tagged) | 0 cached
+
+[Analyst] Running analytics pipeline on 7 matches...
+[Analyst] 1 products analyzed | 1 alerts | cheapest on 0/1
+
+[Pricing] Generating recommendations for 1 products...

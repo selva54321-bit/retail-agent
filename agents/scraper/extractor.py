@@ -71,6 +71,30 @@ SITE_SELECTORS: dict[str, dict] = {
         "price":    "span[class*='productfifteen_pricedata'], span.whitespace-nowrap",
         "original": "",
     },
+    "sathya.in": {
+        "card":     "div.art",
+        "name":     ".art-name",
+        "price":    ".art-price--val, .art-price",
+        "original": ".art-price--old",
+    },
+    "reliancedigital.in": {
+        "card":     "div.details-container",
+        "name":     "p[class*='name']",
+        "price":    "span.price, span.TextWeb__Text-sc-1cyx778-0",
+        "original": "del, span[class*='old-price']",
+    },
+    "darlingretail.com": {
+        "card":     "div.product-item",
+        "name":     "a.product-item__title, a.product-item-meta__title",
+        "price":    "span.price:not(.price--compare)",
+        "original": "span.price--compare",
+    },
+    "vasanthandco.in": {
+        "card":     "div.product",
+        "name":     ".product-title, .product-name",
+        "price":    ".new-price, .product-price ins, .product-price",
+        "original": ".old-price, .product-price del",
+    },
 }
 
 GENERIC: dict[str, str] = {

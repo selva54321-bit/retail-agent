@@ -73,7 +73,25 @@ SEARCH_BOX_SELECTORS: dict[str, list[str]] = {
         "input[type='search']",
         "input[name='q']",
     ],
+    "sathya.in": [
+        "input[id='instasearch']",
+        "input[name='q']",
+        "input[placeholder*='Search' i]",
+    ],
+    "reliancedigital.in": [
+        "input[id='suggestionBoxEle']",
+        "input[class*='search' i]",
+        "#suggestionBoxEle",
+        "input#suggestionBoxEle",
+    ],
+    "darlingretail.com": [
+        "input[id*='search' i]",
+        "input[name*='q' i]",
+        "input[title*='search' i]",
+    ],
     "croma.com": [
+        "#searchV2",
+        "input#searchV2",
         "input#headerSearchInput",
         "input[placeholder*='Search' i]",
         "input[class*='search']",
@@ -88,7 +106,9 @@ SEARCH_BOX_SELECTORS: dict[str, list[str]] = {
         "input[name='q']",
         "input[placeholder*='Search' i]",
     ],
-    "vasanthandco.com": [
+    "vasanthandco.in": [
+        "input#productSearch",
+        "input#fsearchText",
         "input#search",
         "input[name='q']",
         "input[placeholder*='Search' i]",
@@ -192,6 +212,8 @@ def _interactive_search(base_url: str, product_name: str) -> str:
         page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
         # Let the page fully settle before looking for search box
         time.sleep(random.uniform(2.0, 3.0))
+        page.keyboard.press("Escape") # close any initial popups
+        time.sleep(0.5)
 
         # ── Step 2: Find the search box (Locator API) ─────────────
         search_locator = _find_search_box(page, domain)
@@ -203,9 +225,17 @@ def _interactive_search(base_url: str, product_name: str) -> str:
 
         # ── Step 3: Click, clear, type the product name ───────────
         # Use Locator methods — these work reliably unlike ElementHandle
-        search_locator.click()
-        time.sleep(0.3)
-        search_locator.fill("")          # clear any existing text
+        try:
+            search_locator.click(timeout=3000, force=True)
+            time.sleep(0.3)
+        except Exception:
+            pass # ignore click timeout if obscured, we will force fill
+        
+        try:
+            search_locator.fill("", timeout=3000, force=True)          # clear any existing text
+        except Exception:
+            search_locator.evaluate("el => el.value = ''")
+            
         time.sleep(0.2)
         # Type character by character with random delays — humanlike
         search_locator.type(product_name, delay=random.randint(50, 100))
