@@ -211,46 +211,10 @@ def run_planner_node(state: AgentState) -> dict:
     print(f"  Catalog: {len(profile.catalog)} products × "
           f"{len(profile.known_competitors)} known competitors")
 
-    # ── Start with known competitors from intake ──────────────
+    # ── Use only known competitors from intake ───────────────
     all_competitors = list(profile.known_competitors)
-
-    # ── Ask LLM to suggest additional competitors ─────────────
-    profile_summary = (
-        f"Store: {profile.store_name}\n"
-        f"Category: {profile.category} | Location: {profile.location}\n"
-        f"Known competitors: {', '.join(profile.known_competitors)}\n"
-        f"Strategy: {profile.pricing_strategy}"
-    )
-    try:
-        chain    = _build_planner_chain()
-        llm_data = chain.invoke({"profile_summary": profile_summary})
-        extras   = llm_data.get("additional_competitors", [])
-        strategy = llm_data.get("strategy_framework", profile.pricing_strategy)
-        reasoning = llm_data.get("reasoning", "")
-
-        existing_lower = {c.lower() for c in all_competitors}
-        for c in extras:
-            c = str(c).strip()
-            # ── Filter out garbage suggestions ─────────────────
-            # Reject if: too long (a sentence, not a name), contains
-            # conditional phrases, parentheticals, or is a generic description
-            if (not c
-                    or len(c) > 40
-                    or "(" in c
-                    or c.lower().startswith("local ")
-                    or "stores in" in c.lower()
-                    or "if they" in c.lower()
-                    or " or " in c.lower()):
-                print(f"  ✗ Filtered invalid suggestion: '{c}'")
-                continue
-            if c.lower() not in existing_lower:
-                all_competitors.append(c)
-                print(f"  + LLM suggested: {c}")
-
-    except Exception as e:
-        print(f"  [Planner] LLM unavailable ({str(e)[:60]}), using known competitors only.")
-        strategy  = profile.pricing_strategy
-        reasoning = f"Rule-based plan for {profile.category} in {profile.location}."
+    strategy  = profile.pricing_strategy
+    reasoning = f"Rule-based plan for {profile.category} in {profile.location} using known competitors."
 
     # ── Generate one URL per (competitor × product) ───────────
     targets = _build_targets(
