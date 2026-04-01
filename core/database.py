@@ -53,7 +53,7 @@ def init_db():
         notes               TEXT DEFAULT '',
         catalog_sku          TEXT DEFAULT '',
         catalog_product_name TEXT DEFAULT '',
-        UNIQUE(retailer_id, url)
+        UNIQUE(retailer_id, url, catalog_sku)
     );
 
     CREATE TABLE IF NOT EXISTS price_history (
@@ -202,7 +202,7 @@ def upsert_competitor(retailer_id: int, target: dict):
              scrape_method, product_category, selector_config, source, notes,
              catalog_sku, catalog_product_name)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(retailer_id, url) DO UPDATE SET
+        ON CONFLICT(retailer_id, url, catalog_sku) DO UPDATE SET
             priority=excluded.priority,
             scan_interval_hours=excluded.scan_interval_hours,
             scrape_method=excluded.scrape_method,
