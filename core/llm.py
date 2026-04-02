@@ -35,8 +35,9 @@ from langchain_core.embeddings      import Embeddings
 
 _config: dict = {
     # Active provider — set by main.py at startup
+    # Active provider — set by main.py at startup
     # Choices: "gemini" | "ollama" | "grok"
-    "provider": "ollama",
+    "provider": "gemini",
 
     # ── Gemini ────────────────────────────────────────────────────
     "gemini_api_key": os.environ.get("GOOGLE_API_KEY", "AIzaSyBcSFLrsFiW7KWbau4HoiTui-QEmOFrVG8"),
@@ -175,7 +176,7 @@ def _get_ollama_embeddings() -> Embeddings:
 def _get_gemini_embeddings() -> Embeddings:
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
     return GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004",
+        model="models/gemini-embedding-001",
         google_api_key=_config["gemini_api_key"],
     )
 
