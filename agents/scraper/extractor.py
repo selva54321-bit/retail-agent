@@ -50,7 +50,7 @@ MIN_CONF  = 0.15     # drop results below this name-match confidence
 SITE_SELECTORS: dict[str, dict] = {
     "amazon.in": {
         "card":     '[data-component-type="s-search-result"][data-asin][data-asin!=""]',
-        "price":    "span.a-price:not(.a-text-price) span.a-offscreen",
+        "price":    "span.a-price:not(.a-text-price) span.a-offscreen, span.a-price-whole",
         "original": "span.a-text-price span.a-offscreen, span.a-text-strike",
     },
     "flipkart.com": {
@@ -160,20 +160,15 @@ def _best_name_from_card(card, sels: dict) -> str:
       3. Site-specific name selector
       4. a[title] anywhere in card
     """
-    # Step 1 — all spans inside h2 anchor, pick longest
-    h2 = card.find("h2")
-    if h2:
-        anchor = h2.find("a")
-        if anchor:
-            best = max(
-                (sp.get_text(separator=" ", strip=True) for sp in anchor.find_all("span")),
-                key=len, default=""
-            )
-            if len(best) >= 10:
-                return best
-            t = anchor.get("title") or anchor.get_text(separator=" ", strip=True)
-            if t and len(t) >= 10:
-                return t
+    # Step 1 — all text inside ANY h2 tag
+    # Amazon separates the Brand and Title into multiple h2 tags. We must concatenate them!
+    h2s = card.find_all("h2")
+    if h2s:
+        best = " ".join(h2.get_text(separator=" ", strip=True) for h2 in h2s)
+        # Collapse multiple spaces that might result from joining
+        best = " ".join(best.split())
+        if len(best) >= 10:
+            return best
 
     # Step 2 — site-specific name selector
     name_sel = sels.get("name", "")
@@ -243,6 +238,7 @@ def _bs4_extract(html: str, domain: str, searched_name: str) -> list[dict]:
                 break
 
         if not price:
+            print(f"    [Extractor-Debug] Amazon dropped (no price found). Name: '{name[:50]}'")
             continue
 
         # Original / struck-through price
@@ -285,7 +281,7 @@ def _build_records(raw: list, state: ScraperSubState, method: str) -> list[dict]
             continue
         conf = _match_score(name, state.get("catalog_product_name", ""))
         if conf < MIN_CONF:
-            print(f"    [Extractor] ⚠ Low match ({conf:.2f}): '{name[:40]}'")
+            print(f"    [Extractor] ⚠ Low match ({conf:.2f}): '{name[:40]}' against '{state.get('catalog_product_name', '')[:40]}'")
             continue
         orig = r.get("original_price")
         try:

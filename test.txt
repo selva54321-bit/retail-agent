@@ -24,7 +24,7 @@
 [DB] Initialized at retailagent.db
 
 ════════════════════════════════════════════════════════════
-  RetailAgent LangGraph Cycle: d27bb8ca
+  RetailAgent LangGraph Cycle: caa4a30a
   Nodes: intake→planner→scraper→normalizer→analyst→pricing→reporter
 ════════════════════════════════════════════════════════════
 
@@ -53,48 +53,57 @@
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([data-component-type="s-search-result"][data-asin])
-    [Navigator] ✓ Results HTML captured (1,102,370 chars)
-    [Fetcher] Processing 1,102,370 chars of HTML...
-    [Fetcher] ✓ Focused section: 353,308 chars
+    [Navigator] ✓ Results HTML captured (1,356,873 chars)
+    [Fetcher] Processing 1,356,873 chars of HTML...
+    [Fetcher] ✓ Focused section: 632,944 chars
     [Extractor] Searching for 'LG 81.28 cm 32 inch Full HD LED Smart WebOS T' on amazon.in
-    [Extractor] ↕ 0 product cards with valid prices found
+    [Extractor-Debug] Amazon dropped (no price found). Name: 'TEXLA 80 Cm(32") Frame Less HD Ready Android Smart'
+    [Extractor-Debug] Amazon dropped (no price found). Name: 'Reliance 32 inch HD Ready Smart Cloud LED TV | 250'
+    [Extractor] ✓ ₹28,990  conf=0.59  'LG 108 cm (43 inches) UA82 AI Series 4K Ultra HD S'
     [Navigator] 🌐 Amazon India
-  ✗ Amazon India | LG 81.28 cm 32 inch Full HD LE — no data
+  ✓ Amazon India | LG 81.28 cm 32 inch Full HD LE — 3 record(s)
     [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
     [Navigator] Opening https://www.amazon.in ...
     [Navigator] ✓ Search box: #twotabsearchtextbox
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([data-component-type="s-search-result"][data-asin])
-    [Navigator] ✓ Results HTML captured (663,576 chars)
-    [Fetcher] Processing 663,576 chars of HTML...
-    [Fetcher] ✓ Focused section: 211,520 chars
+    [Navigator] ✓ Results HTML captured (841,509 chars)
+    [Fetcher] Processing 841,509 chars of HTML...
+    [Fetcher] ✓ Focused section: 241,626 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on amazon.in
-    [Extractor] ↕ 0 product cards with valid prices found
+    [Extractor-Debug] Amazon dropped (no price found). Name: 'TCL 139 cm (55 inches) 4K Ultra HD Smart QLED Goog'
+    [Extractor-Debug] Amazon dropped (no price found). Name: 'BLAUPUNKT 108 cm (43 inches) Quantum Dot Series 4K'
+    [Extractor] ✓ ₹53,990  conf=0.21  'TCL 164 cm (65 inches) 4K Ultra HD Smart QLED Goog'
     [Navigator] 🌐 Amazon India
-  ✗ Amazon India | LG HD Ready AI Smart TV 32LR59 — no data
-    [Navigator] Searching: 'Samsung 108 cm (43 inches) Crystal 4K Vista Pro Ultra H'
+  ✓ Amazon India | LG HD Ready AI Smart TV 32LR59 — 1 record(s)
+    [Navigator] Searching: 'Samsung 108 cm (43 inches) Crystal 4K Vista Pro Ultra H'      
     [Navigator] Opening https://www.amazon.in ...
     [Navigator] ✓ Search box: #twotabsearchtextbox
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([data-component-type="s-search-result"][data-asin])
-    [Navigator] ✓ Results HTML captured (996,904 chars)
-    [Fetcher] Processing 996,904 chars of HTML...
-    [Fetcher] ✓ Focused section: 354,846 chars
+    [Navigator] ✓ Results HTML captured (1,409,750 chars)
+    [Fetcher] Processing 1,409,750 chars of HTML...
+    [Fetcher] ✓ Focused section: 597,466 chars
     [Extractor] Searching for 'Samsung 108 cm (43 inches) Crystal 4K Vista P' on amazon.in
-    [Extractor] ↕ 0 product cards with valid prices found
+    [Extractor-Debug] Amazon dropped (no price found). Name: 'BLAUPUNKT 108 cm (43 inches) Quantum Dot Series 4K'
+    [Extractor-Debug] Amazon dropped (no price found). Name: 'Samsung 108 cm (43 inches) 4K Ultra HD QLED Smart '
+    [Extractor-Debug] Amazon dropped (no price found). Name: 'Samsung 108 cm (43 inches) 4K Ultra HD Smart LED T'
+    [Extractor-Debug] Amazon dropped (no price found). Name: 'Panasonic 108 cm (43 inches) 4K Ultra HD Smart LED'
+    [Extractor-Debug] Amazon dropped (no price found). Name: 'Samsung 108 cm (43 inches) FHD Smart LED TV UA43F5'
+    [Extractor] ✓ ₹31,490  conf=0.94  'Samsung 108 cm (43 inches) Crystal 4K Vista Pro Ul'
     [Navigator] 🌐 Croma
-  ✗ Amazon India | Samsung 108 cm (43 inches) Cry — no data
+  ✓ Amazon India | Samsung 108 cm (43 inches) Cry — 3 record(s)
     [Navigator] Searching: 'LG 81.28 cm 32 inch Full HD LED Smart WebOS TV'
     [Navigator] Opening https://www.croma.com ...
     [Navigator] ✓ Search box: #searchV2
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready (li.product-item)
-    [Navigator] ✓ Results HTML captured (173,569 chars)
-    [Fetcher] Processing 173,569 chars of HTML...
-    [Fetcher] ✓ Focused section: 16,836 chars
+    [Navigator] ✓ Results HTML captured (564,429 chars)
+    [Fetcher] Processing 564,429 chars of HTML...
+    [Fetcher] ✓ Focused section: 16,833 chars
     [Extractor] Searching for 'LG 81.28 cm 32 inch Full HD LED Smart WebOS T' on croma.com
     [Extractor] ✓ ₹15,990  conf=0.70  'LG 80cm (32 inch) HD LED Smart webOS TV with AI So'
     [Navigator] 🌐 Croma
@@ -105,9 +114,9 @@
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready (li.product-item)
-    [Navigator] ✓ Results HTML captured (635,045 chars)
-    [Fetcher] Processing 635,045 chars of HTML...
-    [Fetcher] ✓ Focused section: 72,592 chars
+    [Navigator] ✓ Results HTML captured (632,707 chars)
+    [Fetcher] Processing 632,707 chars of HTML...
+    [Fetcher] ✓ Focused section: 72,806 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on croma.com
     [Extractor] ✓ ₹14,490  conf=0.60  'LG LM56 80cm (32 Inch) HD Ready LED Smart WebOS TV'
     [Navigator] 🌐 Croma
@@ -118,22 +127,22 @@
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready (li.product-item)
-    [Navigator] ✓ Results HTML captured (246,538 chars)
-    [Fetcher] Processing 246,538 chars of HTML...
-    [Fetcher] ✓ Focused section: 69,733 chars
+    [Navigator] ✓ Results HTML captured (637,324 chars)
+    [Fetcher] Processing 637,324 chars of HTML...
+    [Fetcher] ✓ Focused section: 69,679 chars
     [Extractor] Searching for 'Samsung 108 cm (43 inches) Crystal 4K Vista P' on croma.com
     [Extractor] ✓ ₹25,990  conf=0.67  'SAMSUNG DUE70 109 cm (43 inch) 4K Ultra HD LED Tiz'
     [Navigator] 🌐 Flipkart
-  ✓ Croma | Samsung 108 cm (43 inches) Cry — 3 record(s)
     [Navigator] Searching: 'LG 81.28 cm 32 inch Full HD LED Smart WebOS TV'
+  ✓ Croma | Samsung 108 cm (43 inches) Cry — 3 record(s)
     [Navigator] Opening https://www.flipkart.com ...
     [Navigator] ✓ Search box: input[title='Search for Products, Brands and More']
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready (div[data-id])
-    [Navigator] ✓ Results HTML captured (269,641 chars)
-    [Fetcher] Processing 269,641 chars of HTML...
-    [Fetcher] ↕ No section found — stripped noise: 113,159 chars
+    [Navigator] ✓ Results HTML captured (300,546 chars)
+    [Fetcher] Processing 300,546 chars of HTML...
+    [Fetcher] ↕ No section found — stripped noise: 113,842 chars
     [Extractor] Searching for 'LG 81.28 cm 32 inch Full HD LED Smart WebOS T' on flipkart.com
     [Extractor] ✓ ₹19,645  conf=0.99  'LG 81.28 cm (32 inch) Full HD LED Smart WebOS TV'
     [Navigator] 🌐 Flipkart
@@ -144,9 +153,9 @@
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready (div[data-id])
-    [Navigator] ✓ Results HTML captured (236,398 chars)
-    [Fetcher] Processing 236,398 chars of HTML...
-    [Fetcher] ↕ No section found — stripped noise: 112,309 chars
+    [Navigator] ✓ Results HTML captured (278,487 chars)
+    [Fetcher] Processing 278,487 chars of HTML...
+    [Fetcher] ↕ No section found — stripped noise: 113,038 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on flipkart.com
     [Extractor] ✓ ₹23,247  conf=0.66  'LG 80 cm (32 inch) HD Ready LED Smart WebOS TV'
     [Navigator] 🌐 Flipkart
@@ -157,79 +166,76 @@
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready (div[data-id])
-    [Navigator] ✓ Results HTML captured (269,633 chars)
-    [Fetcher] Processing 269,633 chars of HTML...
-    [Fetcher] ↕ No section found — stripped noise: 112,868 chars
+    [Navigator] ✓ Results HTML captured (279,865 chars)
+    [Fetcher] Processing 279,865 chars of HTML...
+    [Fetcher] ↕ No section found — stripped noise: 113,328 chars
     [Extractor] Searching for 'Samsung 108 cm (43 inches) Crystal 4K Vista P' on flipkart.com
     [Extractor] ✓ ₹29,890  conf=0.79  'Samsung Crystal 4K 108 cm (43 inch) Ultra HD (4K) '
     [Navigator] 🌐 Poorvika
-  ✓ Flipkart | Samsung 108 cm (43 inches) Cry — 3 record(s)
     [Navigator] Searching: 'LG 81.28 cm 32 inch Full HD LED Smart WebOS TV'
+  ✓ Flipkart | Samsung 108 cm (43 inches) Cry — 3 record(s)
     [Navigator] Opening https://www.poorvika.com ...
     [Navigator] ✓ Search box: input[placeholder*='Search' i]
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([class*="product-card"])
-    [Navigator] ✓ Results HTML captured (728,025 chars)
-    [Fetcher] Processing 728,025 chars of HTML...
+    [Navigator] ✓ Results HTML captured (728,064 chars)
+    [Fetcher] Processing 728,064 chars of HTML...
     [Fetcher] ✓ Focused section: 120,034 chars
     [Extractor] Searching for 'LG 81.28 cm 32 inch Full HD LED Smart WebOS T' on poorvika.com
     [Extractor] ✓ ₹24,490  conf=0.64  'LG Full HD Smart LED TV LR56 ( 43 inch )'
     [Navigator] 🌐 Poorvika
-  ✓ Poorvika | LG 81.28 cm 32 inch Full HD LE — 3 record(s)
     [Navigator] Searching: 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch'
+  ✓ Poorvika | LG 81.28 cm 32 inch Full HD LE — 3 record(s)
     [Navigator] Opening https://www.poorvika.com ...
     [Navigator] ✓ Search box: input[placeholder*='Search' i]
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([class*="product-card"])
-    [Navigator] ✓ Results HTML captured (124,575 chars)
-    [Fetcher] Processing 124,575 chars of HTML...
+    [Navigator] ✓ Results HTML captured (124,583 chars)
+    [Fetcher] Processing 124,583 chars of HTML...
     [Fetcher] ✓ Focused section: 2,571 chars
     [Extractor] Searching for 'LG HD Ready AI Smart TV 32LR595B6LA 32 inch' on poorvika.com
     [Extractor] ✓ ₹14,990  conf=0.98  'LG HD Ready AI Smart TV, 32LR595B6LA ( 32 inch )'
     [Navigator] 🌐 Poorvika
-  ✓ Poorvika | LG HD Ready AI Smart TV 32LR59 — 1 record(s)
     [Navigator] Searching: 'Samsung 108 cm (43 inches) Crystal 4K Vista Pro Ultra H'
+  ✓ Poorvika | LG HD Ready AI Smart TV 32LR59 — 1 record(s)
     [Navigator] Opening https://www.poorvika.com ...
     [Navigator] ✓ Search box: input[placeholder*='Search' i]
     [Navigator] ✓ Search box located — typing...
     [Navigator] Submitting search...
     [Navigator] ✓ Product cards ready ([class*="product-card"])
-    [Navigator] ✓ Results HTML captured (595,097 chars)
-    [Fetcher] Processing 595,097 chars of HTML...
-    [Fetcher] ✓ Focused section: 121,053 chars
+    [Navigator] ✓ Results HTML captured (593,394 chars)
+    [Fetcher] Processing 593,394 chars of HTML...
+    [Fetcher] ✓ Focused section: 121,069 chars
     [Extractor] Searching for 'Samsung 108 cm (43 inches) Crystal 4K Vista P' on poorvika.com
     [Extractor] ✓ ₹36,990  conf=0.63  'Samsung 4K Ultra HD LED Smart TV U8600 ( 43 inch )'
   ✓ Poorvika | Samsung 108 cm (43 inches) Cry — 3 record(s)
 
-[Scraper] Done — 25 price records from 9/12 targets  |  avg conf: 0.68
-  No data for 3 target(s)
+[Scraper] Done — 32 price records from 12/12 targets  |  avg conf: 0.67
 
-[Normalizer] Matching 25 scraped products to catalog...
+[Normalizer] Matching 32 scraped products to catalog...
   [Normalizer] Chroma/embeddings unavailable (Error embedding content (NOT_FOUND): 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/text-embedding-004 is not found for API version v1beta, or is not supported for embedContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}), using fallback.
-[Normalizer] 25 matches | 25 new (incl. pre-tagged) | 0 cached
+[Normalizer] 32 matches | 32 new (incl. pre-tagged) | 0 cached
   1 products could not be matched (flagged for review)
 
-[Analyst] Running analytics pipeline on 25 matches...
+[Analyst] Running analytics pipeline on 32 matches...
 [Analyst] 3 products analyzed | 3 alerts | cheapest on 0/3
 
 [Pricing] Generating recommendations for 3 products...
 
-
-
-  ██████╗ ███████╗████████╗ █████╗ ██╗██╗      █████╗  ██████╗ ███████╗███╗  ██╗████████╗
+██████╗ ███████╗████████╗ █████╗ ██╗██╗      █████╗  ██████╗ ███████╗███╗  ██╗████████╗
   RetailAgent — Competitive Price Intelligence
-  Store: The TV Shop Coimbatore  |  Category: televisions  |  01 Apr 2026 22:35
+  Store: The TV Shop Coimbatore  |  Category: televisions  |  02 Apr 2026 11:01
 
 ══════════════════════════════════════════════════════════════════════
   📊 PRICE COMPARISON TABLE
 ──────────────────────────────────────────────────────────────────────
-  Product                                 Yours          Croma       Flipkart       Poorvika   Rank   Gap%
-  ─────────────────────────────────────────────────────────────────────────────────────────────────────
-  Samsung 108 cm (43 inches) C   ₹     33,230 ₹     30,590 ₹     50,239 ₹     38,400      2  +8.6% ─
-  LG 81.28 cm 32 inch Full HD    ₹     17,912 ₹     17,590 ₹     24,132 ₹     16,990      3  +5.4% ─
-  LG HD Ready AI Smart TV 32LR   ₹     17,912 ₹      7,364 ₹     24,132 ₹     14,990      3 +143.2% ─
+  Product                                 Yours   Amazon India          Croma       Flipkart       Poorvika   Rank   Gap%
+  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Samsung 108 cm (43 inches) C   ₹     33,230 ₹     36,990 ₹     30,590 ₹     50,239 ₹     38,400      2  +8.6% ─
+  LG HD Ready AI Smart TV 32LR   ₹     17,912 ₹     53,990 ₹      7,364 ₹     24,132 ₹     14,990      3 +143.2% ─
+  LG 81.28 cm 32 inch Full HD    ₹     17,912 ₹     12,499 ₹     17,590 ₹     24,132 ₹     16,990      4 +43.3% ─
 
   Cheapest on 0/3 products (0% of catalog)
 
@@ -238,57 +244,50 @@
 ──────────────────────────────────────────────────────────────────────
   3 actionable | 0 hold
 
+  ↓ LG 81.28 cm 32 inch Full HD LED Smart WebOS T
+    Price:  ₹17,912  →  ₹16,100 (-10.1%)  [aggressive_reduce]  conf=85%
+    ↳ The product is priced significantly above the cheapest competitor, and the current price does not al
+    ⚙ Guardrail: Margin floor applied (min ₹16100).
+
   ↓ LG HD Ready AI Smart TV 32LR595B6LA 32 inch
     Price:  ₹17,912  →  ₹16,100 (-10.1%)  [reduce]  conf=85%
-    ↳ The product is currently priced significantly higher than the cheapest competitor, despite being a s
+    ↳ The product is currently priced significantly above the cheapest competitor (Poorvika at ₹14,990), d
     ⚙ Guardrail: Margin floor applied (min ₹16100).
 
   ↓ Samsung 108 cm (43 inches) Crystal 4K Vista P
     Price:  ₹33,230  →  ₹31,630 (-4.8%)  [reduce]  conf=85%
-    ↳ The retailer is currently priced 8.6% above the cheapest competitor (Croma). To achieve competitive 
+    ↳ The retailer is currently priced 8.6% above the cheapest competitor, which is not justified given th
     ⚙ Guardrail: Margin floor applied (min ₹31634).
-
-  ↓ LG 81.28 cm 32 inch Full HD LED Smart WebOS T
-    Price:  ₹17,912  →  ₹17,590 (-1.8%)  [reduce]  conf=85%
-    ↳ The retailer is currently priced above the cheapest competitor (Poorvika) and is ranked 3rd out of 4
 
 
 ══════════════════════════════════════════════════════════════════════
   🔔 ALERTS
 ──────────────────────────────────────────────────────────────────────
-  📊 5.4% above cheapest (Poorvika @ ₹16990)
+  📊 43.3% above cheapest (Amazon India @ ₹12499)
   📊 143.2% above cheapest (Croma @ ₹7364)
   📊 8.6% above cheapest (Croma @ ₹30590)
 
 ══════════════════════════════════════════════════════════════════════
   📰 MORNING BRIEFING
 ──────────────────────────────────────────────────────────────────────
-  Good morning. Here's your retail briefing for today, April 1st, 2026.
+  Good morning. Your TV category is currently priced above the market average.
 
-  Your TV pricing is currently above the market average across all monitored products.
+  We've identified three urgent pricing opportunities. First, the LG 32-inch Full HD Smart TV should be reduced from ₹17,912 to ₹16,100. Second, the LG 32-inch HD Ready AI Smart TV also needs to come down from ₹17,912 to ₹16,100. Finally, the Samsung 43-inch Crystal 4K Vista Pro should be priced at ₹31,630, down from ₹33,230.
 
-  Your top three pricing opportunities today are:
-  First, reduce the LG HD Ready AI Smart TV 32LR595B6LA 32 inch from ₹17,912 to ₹16,100.
-  Next, adjust the Samsung 43-inch Crystal 4K Vista Pro Ultra HD Smart LED TV from ₹33,230 to ₹31,630.
-  Finally, consider lowering the LG 32-inch Full HD LED Smart WebOS TV from ₹17,912 to ₹17,590.
+  No significant competitor moves or anomalies were detected today.
 
-  No significant competitor moves or anomalies were detected in the market overnight.
-
-  For today, I recommend focusing on implementing these price adjustments to bring you back in line with the competition.
+  For today, focus on implementing these price adjustments to bring you closer to competitive parity.   
 
 ══════════════════════════════════════════════════════════════════════
   ⚡ CYCLE SUMMARY
 ──────────────────────────────────────────────────────────────────────
-  Cycle ID:                   d27bb8ca
-  Started:                    2026-04-01 22:26:21
-  Records scraped:            25
-  Products matched:           25
+  Cycle ID:                   caa4a30a
+  Started:                    2026-04-02 10:51:39
+  Records scraped:            32
+  Products matched:           32
   Analytics computed:         3
   Recommendations:            3
   Alerts raised:              3
-
-  Errors encountered:
-    • Scraper: 3 targets no data
 
 ══════════════════════════════════════════════════════════════════════
 
@@ -300,6 +299,6 @@
   Options: a=approve, r=reject, s=skip, q=approve all
 
   Product: LG 81.28 cm 32 inch Full HD LED Smart WebOS TV
-  Change:  ₹17,912 → ₹17,590 (-1.8%)
-  Reason:  The retailer is currently priced above the cheapest competitor (Poorvika) and is ranked 3rd out of 4
+  Change:  ₹17,912 → ₹16,100 (-10.1%)
+  Reason:  The product is priced significantly above the cheapest competitor, and the current price does not al
   [a/r/s/q] →
