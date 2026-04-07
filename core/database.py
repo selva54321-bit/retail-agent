@@ -141,6 +141,42 @@ def init_db():
         briefing        TEXT,
         errors_json     TEXT DEFAULT '[]'
     );
+
+    -- ── NEW: Competitor full catalog (products they sell, not just yours) ──
+    CREATE TABLE IF NOT EXISTS competitor_catalog (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        retailer_id     INTEGER,
+        competitor_name TEXT,
+        product_name    TEXT,
+        price           REAL,
+        in_stock        INTEGER DEFAULT 1,
+        first_seen_at   TEXT,
+        last_seen_at    TEXT,
+        times_seen      INTEGER DEFAULT 1,
+        times_out_of_stock INTEGER DEFAULT 0,
+        catalog_sku     TEXT DEFAULT '',   -- non-empty if matches user's catalog
+        UNIQUE(retailer_id, competitor_name, product_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_comp_catalog_retailer
+        ON competitor_catalog(retailer_id, competitor_name);
+
+    -- ── NEW: Market intelligence derived per cycle ──────────────────
+    CREATE TABLE IF NOT EXISTS market_intelligence (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        retailer_id         INTEGER,
+        cycle_id            TEXT,
+        competitor_name     TEXT,
+        strategy_label      TEXT,   -- price_leader|price_follower|premium_anchor|discount_aggressor
+        avg_price_gap_pct   REAL,   -- vs market avg
+        price_change_count  INTEGER DEFAULT 0,
+        flash_sales_count   INTEGER DEFAULT 0,
+        insights_json       TEXT DEFAULT '{}',
+        computed_at         TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_market_intel_retailer
+        ON market_intelligence(retailer_id, competitor_name);
     """)
 
     conn.commit()
@@ -430,5 +466,156 @@ def get_recent_cycles(retailer_id: int, limit: int = 10) -> list:
         "SELECT * FROM cycle_log WHERE retailer_id=? ORDER BY started_at DESC LIMIT ?",
         (retailer_id, limit)
     ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ─── COMPETITOR CATALOG ──────────────────────
+
+def upsert_competitor_catalog(retailer_id: int, records: list[dict]):
+    """
+    Upsert all scraped products into the competitor_catalog table.
+    On conflict (same retailer+competitor+product): update price,
+    last_seen_at, increment times_seen, track stock-outs.
+    """
+    if not records:
+        return
+    conn = get_conn()
+    now  = datetime.now().isoformat()
+    for r in records:
+        name       = r.get("product_name_raw", "")[:250]
+        comp       = r.get("competitor_name", "")
+        price      = r.get("price", 0)
+        in_stock   = int(r.get("in_stock", True))
+        catalog_sku = r.get("catalog_sku", "")
+
+        existing = conn.execute(
+            "SELECT id, times_seen, times_out_of_stock FROM competitor_catalog "
+            "WHERE retailer_id=? AND competitor_name=? AND product_name=?",
+            (retailer_id, comp, name)
+        ).fetchone()
+
+        if existing:
+            out_inc = 0 if in_stock else 1
+            conn.execute("""
+                UPDATE competitor_catalog
+                SET price=?, in_stock=?, last_seen_at=?,
+                    times_seen=times_seen+1,
+                    times_out_of_stock=times_out_of_stock+?,
+                    catalog_sku=CASE WHEN ?!='' THEN ? ELSE catalog_sku END
+                WHERE id=?
+            """, (price, in_stock, now, out_inc,
+                  catalog_sku, catalog_sku, existing["id"]))
+        else:
+            conn.execute("""
+                INSERT INTO competitor_catalog
+                    (retailer_id, competitor_name, product_name, price,
+                     in_stock, first_seen_at, last_seen_at, times_seen,
+                     times_out_of_stock, catalog_sku)
+                VALUES (?,?,?,?,?,?,?,1,?,?)
+            """, (retailer_id, comp, name, price,
+                  in_stock, now, now,
+                  0 if in_stock else 1, catalog_sku))
+    conn.commit()
+    conn.close()
+
+
+def get_competitor_catalog(retailer_id: int,
+                            competitor_name: str = None) -> list[dict]:
+    conn  = get_conn()
+    if competitor_name:
+        rows = conn.execute(
+            "SELECT * FROM competitor_catalog WHERE retailer_id=? AND competitor_name=? "
+            "ORDER BY times_seen DESC",
+            (retailer_id, competitor_name)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM competitor_catalog WHERE retailer_id=? ORDER BY last_seen_at DESC",
+            (retailer_id,)
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_new_competitor_products(retailer_id: int, since_hours: int = 25) -> list[dict]:
+    """Products first seen in the last N hours (new arrivals)."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT * FROM competitor_catalog
+        WHERE retailer_id=?
+          AND catalog_sku=''
+          AND first_seen_at >= datetime('now', ? || ' hours')
+        ORDER BY competitor_name, first_seen_at DESC
+    """, (retailer_id, f"-{since_hours}")).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_frequent_stockouts(retailer_id: int,
+                            min_stockouts: int = 2) -> list[dict]:
+    """Products that went out of stock frequently — proxy for high demand."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT *, CAST(times_out_of_stock AS REAL)/times_seen AS stockout_rate
+        FROM competitor_catalog
+        WHERE retailer_id=? AND times_seen >= 3 AND times_out_of_stock >= ?
+        ORDER BY times_out_of_stock DESC
+    """, (retailer_id, min_stockouts)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ─── MARKET INTELLIGENCE ──────────────────────
+
+def save_market_intelligence(retailer_id: int, cycle_id: str,
+                              intel_list: list[dict]):
+    if not intel_list:
+        return
+    conn = get_conn()
+    now  = datetime.now().isoformat()
+    conn.executemany("""
+        INSERT INTO market_intelligence
+            (retailer_id, cycle_id, competitor_name, strategy_label,
+             avg_price_gap_pct, price_change_count, flash_sales_count,
+             insights_json, computed_at)
+        VALUES (?,?,?,?,?,?,?,?,?)
+    """, [
+        (retailer_id, cycle_id,
+         r["competitor_name"], r.get("strategy_label", "unknown"),
+         r.get("avg_price_gap_pct", 0), r.get("price_change_count", 0),
+         r.get("flash_sales_count", 0),
+         json.dumps(r.get("insights", {})), now)
+        for r in intel_list
+    ])
+    conn.commit()
+    conn.close()
+
+
+def get_market_intelligence(retailer_id: int,
+                             limit_per_competitor: int = 10) -> list[dict]:
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT * FROM market_intelligence
+        WHERE retailer_id=?
+        ORDER BY computed_at DESC
+        LIMIT ?
+    """, (retailer_id, limit_per_competitor * 10)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_price_history_for_intel(retailer_id: int,
+                                 competitor_name: str,
+                                 days: int = 30) -> list[dict]:
+    """Get price history for a competitor across all their products."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT competitor_name, product_name_raw, price, in_stock, scraped_at
+        FROM price_history
+        WHERE retailer_id=? AND competitor_name=?
+          AND scraped_at >= datetime('now', ? || ' days')
+        ORDER BY scraped_at ASC
+    """, (retailer_id, competitor_name, f"-{days}")).fetchall()
     conn.close()
     return [dict(r) for r in rows]

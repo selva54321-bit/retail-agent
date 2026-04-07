@@ -2,13 +2,17 @@
 RetailAgent — Reporter Agent (LangChain LCEL Summarization Chain)
 ==================================================================
 LangChain patterns used:
-  - LCEL chain                   → context_builder | prompt | llm | str_parser
-  - ChatPromptTemplate           → structured prompt for briefing generation
+  - load_summarize_chain         → LangChain's built-in summarization chain
+  - StuffDocumentsChain          → stuff all context into one prompt (small data)
+  - Document                     → wraps analytics context as LangChain Documents
   - StrOutputParser              → parse plain text briefing from LLM
+  - LCEL chain                   → context_builder | prompt | llm | str_parser
 """
 
 from langchain_core.prompts        import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.documents      import Document
+from langchain.chains.summarize    import load_summarize_chain
 
 from core.state import AgentState
 from core.llm   import get_llm
@@ -19,13 +23,15 @@ REPORTER_SYSTEM = """You are the morning briefing writer for RetailAgent.
 Write a concise, plain-English briefing for a retail store owner.
 
 Structure:
-1. One-line competitive health summary
-2. Top 3 most urgent pricing opportunities (be specific with numbers)
-3. Any significant competitor moves or anomalies  
-4. One recommended focus for today
+1. One-line competitive health summary (price position)
+2. Top 2-3 pricing opportunities (specific numbers)
+3. Competitor moves: strategy labels, flash sales, unusual price drops
+4. Market intelligence: what's selling fast, what new products competitors have
+5. One recommended focus for today
 
-Under 200 words. Write in short paragraphs. No bullet points. 
+Under 250 words. Short paragraphs. No bullet points.
 Sound like a trusted analyst talking to a busy owner.
+If flash sales were detected, say clearly: "Do NOT match this — it's temporary."
 """
 
 
@@ -38,6 +44,8 @@ def run_reporter_node(state: AgentState) -> dict:
     recommendations = state["recommendations"]
     alerts          = state["alerts"]
     profile         = state["retailer_profile"]
+    catalog_alerts  = state.get("catalog_alerts", [])
+    intel_insights  = state.get("intel_insights", {})
 
     print("\n[Reporter] Generating morning briefing...")
 
@@ -62,6 +70,48 @@ def run_reporter_node(state: AgentState) -> dict:
         for a in alerts[:5]
     ]) or "No alerts."
 
+    # Catalog spy context
+    new_arrivals = [a for a in catalog_alerts if a["type"] == "new_arrival"]
+    stock_outs   = [a for a in catalog_alerts if a["type"] == "stock_out"]
+    catalog_lines = ""
+    if new_arrivals:
+        catalog_lines += f"\nNew competitor products ({len(new_arrivals)}):\n"
+        catalog_lines += "\n".join(f"- {a['message']}" for a in new_arrivals[:3])
+    if stock_outs:
+        catalog_lines += f"\nStock-outs detected ({len(stock_outs)}):\n"
+        catalog_lines += "\n".join(f"- {a['message']}" for a in stock_outs[:3])
+
+    # Intel context
+    strategies   = intel_insights.get("competitor_strategies", {})
+    flash_sales  = intel_insights.get("flash_sales", [])
+    fast_movers  = intel_insights.get("fast_movers", [])
+    opportunities = intel_insights.get("opportunities", [])
+
+    intel_lines = ""
+    if strategies:
+        intel_lines += "\nCompetitor strategies:\n"
+        intel_lines += "\n".join(
+            f"- {comp}: {label}" for comp, label in strategies.items()
+        )
+    if flash_sales:
+        intel_lines += f"\n\nFlash sales detected ({len(flash_sales)}):\n"
+        intel_lines += "\n".join(
+            f"- {f['competitor']}: {f['product'][:40]} dropped {f['drop_pct']}%"
+            for f in flash_sales[:3]
+        )
+    if fast_movers:
+        intel_lines += f"\n\nHigh demand products (frequent stock-outs):\n"
+        intel_lines += "\n".join(
+            f"- {fm['product'][:50]} at {fm['competitor']} ({fm['times_out']}x OOS)"
+            for fm in fast_movers[:3]
+        )
+    if opportunities:
+        intel_lines += f"\n\nGrowth opportunities:\n"
+        intel_lines += "\n".join(
+            f"- [{op['priority'].upper()}] {op['type']}: {op['product'][:45]}"
+            for op in opportunities[:3]
+        )
+
     # Build context as LangChain Document
     context_text = f"""
 Store: {profile.store_name} | Category: {profile.category} | Positioning: {profile.brand_positioning}
@@ -79,19 +129,24 @@ Top Recommendations:
 
 Key Alerts:
 {alert_lines}
+{catalog_lines}
+{intel_lines}
 """
 
     try:
         llm = get_llm(temperature=0.3)
 
-        # Modern LCEL chain pattern
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", REPORTER_SYSTEM),
-            ("human",  "Write the morning briefing based on:\n\n{context}"),
-        ])
-        
-        chain = prompt | llm | StrOutputParser()
-        briefing = chain.invoke({"context": context_text})
+        # LangChain StuffDocumentsChain pattern
+        docs  = [Document(page_content=context_text)]
+        chain = load_summarize_chain(
+            llm,
+            chain_type="stuff",
+            prompt=ChatPromptTemplate.from_messages([
+                ("system", REPORTER_SYSTEM),
+                ("human",  "Write the morning briefing based on:\n\n{text}"),
+            ]),
+        )
+        briefing = chain.invoke({"input_documents": docs})["output_text"]
 
     except Exception as e:
         print(f"  [Reporter] LLM unavailable ({e}), using template briefing.")

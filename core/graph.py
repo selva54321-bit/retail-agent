@@ -61,9 +61,11 @@ from core        import database as db
 from agents.intake_agent      import run_intake_node,     load_demo_profile
 from agents.planner_agent     import run_planner_node
 from agents.scout_agent       import run_scout_node
-from agents.scraper           import run_scraper_node          # ← sub-agentic scraper package
+from agents.scraper           import run_scraper_node
 from agents.normalizer_agent  import run_normalizer_node
 from agents.analyst_agent     import run_analyst_node
+from agents.catalog_spy_agent import run_catalog_spy_node
+from agents.intel_agent       import run_intel_node
 from agents.pricing_agent     import run_pricing_node
 from agents.reporter_agent    import run_reporter_node
 
@@ -167,6 +169,8 @@ def build_graph(checkpointer=None) -> StateGraph:
     graph.add_node("scraper",      run_scraper_node)
     graph.add_node("normalizer",   run_normalizer_node)
     graph.add_node("analyst",      run_analyst_node)
+    graph.add_node("catalog_spy",  run_catalog_spy_node)
+    graph.add_node("intel",        run_intel_node)
     graph.add_node("pricing",      run_pricing_node)
     graph.add_node("auto_apply",   auto_apply_node)
     graph.add_node("queue_review", queue_review_node)
@@ -192,9 +196,11 @@ def build_graph(checkpointer=None) -> StateGraph:
     graph.add_edge("planner",    "scout")
     graph.add_edge("scout",      "scraper")
 
-    graph.add_edge("scraper",    "normalizer")
-    graph.add_edge("normalizer", "analyst")
-    graph.add_edge("analyst",    "pricing")
+    graph.add_edge("scraper",      "normalizer")
+    graph.add_edge("normalizer",   "analyst")
+    graph.add_edge("analyst",      "catalog_spy")
+    graph.add_edge("catalog_spy",  "intel")
+    graph.add_edge("intel",        "pricing")
 
     # ── After pricing: conditional on auto_apply preference ─────
     graph.add_conditional_edges(
@@ -261,6 +267,8 @@ def make_initial_state(retailer_id: int,
         errors             = [],
         morning_briefing   = "",
         current_node       = "start",
+        catalog_alerts     = [],
+        intel_insights     = {},
     )
 
 
@@ -295,7 +303,8 @@ def run_cycle(retailer_id: int,
 
     print(f"\n{'═'*60}")
     print(f"  RetailAgent LangGraph Cycle: {initial_state['cycle_id']}")
-    print(f"  Nodes: intake→planner→scraper→normalizer→analyst→pricing→reporter")
+    print(f"  Nodes: intake→planner→scout→scraper→normalizer→analyst")
+    print(f"         →catalog_spy→intel→pricing→reporter")
     print(f"{'═'*60}")
 
     if stream:
