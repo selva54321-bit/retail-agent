@@ -12,7 +12,7 @@ LangChain patterns used:
 from langchain_core.prompts        import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents      import Document
-from langchain.chains.summarize    import load_summarize_chain
+# from langchain.chains.summarize    import load_summarize_chain
 
 from core.state import AgentState
 from core.llm   import get_llm
