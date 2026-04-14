@@ -1,18 +1,13 @@
 """
-RetailAgent — Reporter Agent (LangChain LCEL Summarization Chain)
-==================================================================
+RetailAgent — Reporter Agent (LCEL Briefing Chain)
+===================================================
 LangChain patterns used:
-  - load_summarize_chain         → LangChain's built-in summarization chain
-  - StuffDocumentsChain          → stuff all context into one prompt (small data)
-  - Document                     → wraps analytics context as LangChain Documents
-  - StrOutputParser              → parse plain text briefing from LLM
-  - LCEL chain                   → context_builder | prompt | llm | str_parser
+  - ChatPromptTemplate | get_llm | StrOutputParser  → LCEL briefing chain
+  - Template fallback                               → when LLM unavailable
 """
 
 from langchain_core.prompts        import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.documents      import Document
-# from langchain.chains.summarize    import load_summarize_chain
 
 from core.state import AgentState
 from core.llm   import get_llm
@@ -134,19 +129,13 @@ Key Alerts:
 """
 
     try:
-        llm = get_llm(temperature=0.3)
-
-        # LangChain StuffDocumentsChain pattern
-        docs  = [Document(page_content=context_text)]
-        chain = load_summarize_chain(
-            llm,
-            chain_type="stuff",
-            prompt=ChatPromptTemplate.from_messages([
-                ("system", REPORTER_SYSTEM),
-                ("human",  "Write the morning briefing based on:\n\n{text}"),
-            ]),
-        )
-        briefing = chain.invoke({"input_documents": docs})["output_text"]
+        # Clean LCEL chain: prompt | llm | StrOutputParser
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", REPORTER_SYSTEM),
+            ("human",  "Write the morning briefing based on this data:\n\n{context}"),
+        ])
+        chain    = prompt | get_llm(temperature=0.3) | StrOutputParser()
+        briefing = chain.invoke({"context": context_text})
 
     except Exception as e:
         print(f"  [Reporter] LLM unavailable ({e}), using template briefing.")
@@ -161,14 +150,17 @@ Key Alerts:
 
 
 def _template_briefing(state, total, cheapest, above, anomalies, actionable, alerts) -> str:
-    profile = state["retailer_profile"]
+    profile        = state["retailer_profile"]
+    catalog_alerts = state.get("catalog_alerts", [])
+    intel_insights = state.get("intel_insights", {})
+
     lines = [
         f"📊 COMPETITIVE BRIEFING — {datetime.now().strftime('%d %b %Y, %I:%M %p')}",
         f"Store: {profile.store_name}",
         "─" * 50,
         f"\nMARKET POSITION",
         f"You are cheapest on {cheapest}/{total} products ({cheapest/total*100:.0f}%). "
-        f"{above} products are priced more than 5% above the cheapest competitor.",
+        f"{above} product(s) are priced more than 5% above the cheapest competitor.",
     ]
 
     if anomalies:
@@ -185,8 +177,51 @@ def _template_briefing(state, total, cheapest, above, anomalies, actionable, ale
             sym = "↓" if r["price_change"] < 0 else "↑"
             lines.append(f"  {sym} {r['product_name']}: ₹{r['current_price']:,.0f} → "
                          f"₹{r['recommended_price']:,.0f} ({r['price_change_pct']*100:+.1f}%)")
-            lines.append(f"    → {r['reasoning'][:100]}")
+            lines.append(f"    → {r['reasoning'][:120]}")
     else:
         lines.append("\n✅ Pricing is well-positioned. No urgent changes needed.")
+
+    # Competitor strategy labels
+    strategies = intel_insights.get("competitor_strategies", {})
+    if strategies:
+        lines.append("\n🕵️ COMPETITOR STRATEGIES")
+        labels = {
+            "price_leader":       "consistently cheapest",
+            "premium_anchor":     "priced above market",
+            "discount_aggressor": "frequent flash sales",
+            "price_follower":     "tracks market average",
+            "unknown":            "insufficient data yet",
+        }
+        for comp, label in strategies.items():
+            desc = labels.get(label, label)
+            lines.append(f"  {comp}: {label} ({desc})")
+
+    # Flash sales
+    flash_sales = intel_insights.get("flash_sales", [])
+    if flash_sales:
+        lines.append(f"\n⚡ FLASH SALES DETECTED — Do NOT match these (temporary):")
+        for f in flash_sales[:3]:
+            lines.append(f"  {f['competitor']}: {f['product'][:40]} "
+                         f"dropped {f['drop_pct']}%")
+
+    # Catalog spy findings
+    new_arrivals = [a for a in catalog_alerts if a["type"] == "new_arrival"]
+    stock_outs   = [a for a in catalog_alerts if a["type"] == "stock_out"]
+    opportunities = intel_insights.get("opportunities", [])
+
+    if new_arrivals:
+        lines.append(f"\n🆕 NEW COMPETITOR PRODUCTS (not in your catalog):")
+        for a in new_arrivals[:3]:
+            lines.append(f"  {a['message']}")
+
+    if stock_outs:
+        lines.append(f"\n📦 STOCK-OUTS AT COMPETITORS:")
+        for a in stock_outs[:3]:
+            lines.append(f"  {a['message']}")
+
+    if opportunities:
+        lines.append(f"\n💡 GROWTH OPPORTUNITIES:")
+        for op in opportunities[:3]:
+            lines.append(f"  [{op['priority'].upper()}] {op['reason']}")
 
     return "\n".join(lines)

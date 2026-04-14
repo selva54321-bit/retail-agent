@@ -20,6 +20,12 @@ import sys
 import os
 import argparse
 
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.database       import init_db, list_retailer_profiles

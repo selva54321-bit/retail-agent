@@ -205,7 +205,7 @@ def show_cycle_summary(state: AgentState):
 
 def show_full_dashboard(state: AgentState, retailer_id: int):
     """Show the complete terminal dashboard."""
-    os.system("clear" if os.name == "posix" else "cls")
+    # os.system("clear" if os.name == "posix" else "cls")
 
     print(f"\n{C.BOLD}{C.BLUE}  ██████╗ ███████╗████████╗ █████╗ ██╗██╗      █████╗  ██████╗ ███████╗███╗  ██╗████████╗{C.RESET}")
     print(f"{C.BOLD}{C.CYAN}  RetailAgent — Competitive Price Intelligence{C.RESET}")
