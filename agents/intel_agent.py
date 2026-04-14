@@ -46,106 +46,105 @@ from core       import database as db
 
 def _strategy_classifier(payload: dict) -> dict:
     """
-    Classify each competitor's pricing strategy based on 30-cycle history.
-    Compares their prices against the market average for each product.
+    Classify each competitor's pricing strategy.
+
+    Benchmark: for each product (by catalog_sku), compute the MEDIAN price
+    across all competitors THIS cycle. Then compare each competitor's price
+    to that median. This avoids the product-name mismatch problem completely.
+
+    Labels:
+      price_leader       — avg >5% BELOW median (cheapest)
+      premium_anchor     — avg >5% ABOVE median (most expensive)
+      discount_aggressor — frequent price changes AND sometimes below median
+      price_follower     — within ±5% of median (tracks market)
+      unknown            — not enough data
     """
-    retailer_id = payload["retailer_id"]
-    analytics   = payload["analytics"]   # current cycle analytics per SKU
+    retailer_id    = payload["retailer_id"]
+    scraped        = payload["scraped_records"]
 
     strategies: dict[str, dict] = {}
 
-    # Build market averages from current cycle analytics
-    market_avgs: dict[str, float] = {}
-    for a in analytics:
-        market_avgs[a["product_name"]] = a.get("avg_competitor_price", 0)
+    # ── Build per-SKU price map from THIS cycle's scraped records ──
+    # {catalog_sku → {competitor → [prices]}}
+    sku_comp_prices: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+    for r in scraped:
+        sku  = r.get("catalog_sku", "")
+        comp = r.get("competitor_name", "")
+        price = r.get("price", 0)
+        if sku and comp and price:
+            sku_comp_prices[sku][comp].append(float(price))
 
-    # Get all active competitors from this cycle's scraped data
-    competitors = {r.get("competitor_name", "")
-                   for r in payload["scraped_records"] if r.get("competitor_name")}
+    if not sku_comp_prices:
+        payload["strategies"] = strategies
+        return payload
 
-    for comp in competitors:
+    # ── Compute per-SKU median across all competitors ──────────────
+    sku_medians: dict[str, float] = {}
+    for sku, comp_map in sku_comp_prices.items():
+        all_prices = [p for prices in comp_map.values() for p in prices]
+        if all_prices:
+            sorted_p = sorted(all_prices)
+            n = len(sorted_p)
+            sku_medians[sku] = (sorted_p[n//2] + sorted_p[(n-1)//2]) / 2
+
+    # ── Score each competitor against the median ───────────────────
+    all_competitors = {r.get("competitor_name","") for r in scraped if r.get("competitor_name")}
+
+    for comp in all_competitors:
         if not comp:
             continue
 
-        history = db.get_price_history_for_intel(retailer_id, comp, days=30)
-        if len(history) < 3:
-            strategies[comp] = {
-                "competitor_name":   comp,
-                "strategy_label":    "unknown",
-                "avg_price_gap_pct": 0.0,
-                "price_change_count": 0,
-                "flash_sales_count": 0,
-                "insights":          {"note": "Insufficient history"},
-            }
-            continue
+        gap_pcts     = []
+        change_count = 0
 
-        # Group history by product
-        by_product: dict[str, list] = defaultdict(list)
-        for row in history:
-            by_product[row["product_name_raw"]].append(row)
-
-        gap_pcts      = []
-        change_count  = 0
-        below_market  = 0
-        above_market  = 0
-        total_products = 0
-
-        for prod_name, rows in by_product.items():
-            market_avg = market_avgs.get(prod_name)
-            if not market_avg:
-                # Try partial name match
-                for key, avg in market_avgs.items():
-                    if key[:20].lower() in prod_name.lower():
-                        market_avg = avg
-                        break
-
-            if not market_avg:
+        for sku, comp_map in sku_comp_prices.items():
+            if comp not in comp_map:
+                continue
+            median = sku_medians.get(sku)
+            if not median:
                 continue
 
-            prices = [float(r["price"]) for r in rows if r.get("price")]
-            if not prices:
-                continue
-
-            avg_price = sum(prices) / len(prices)
-            gap_pct   = (avg_price - market_avg) / market_avg if market_avg else 0
+            comp_avg = sum(comp_map[comp]) / len(comp_map[comp])
+            gap_pct  = (comp_avg - median) / median
             gap_pcts.append(gap_pct)
 
-            # Count price changes
+        # Also pull 30-day history to count price changes
+        history = db.get_price_history_for_intel(retailer_id, comp, days=30)
+        by_product: dict[str, list] = defaultdict(list)
+        for row in history:
+            by_product[row["product_name_raw"]].append(float(row.get("price", 0)))
+        for pname, prices in by_product.items():
             for i in range(1, len(prices)):
-                if abs(prices[i] - prices[i-1]) / max(prices[i-1], 1) > 0.01:
+                if prices[i-1] > 0 and abs(prices[i] - prices[i-1]) / prices[i-1] > 0.01:
                     change_count += 1
 
-            if avg_price < market_avg * 0.97:
-                below_market += 1
-            elif avg_price > market_avg * 1.03:
-                above_market += 1
-
-            total_products += 1
-
-        avg_gap = sum(gap_pcts) / len(gap_pcts) if gap_pcts else 0.0
-
-        # Classify strategy
-        if total_products == 0:
-            label = "unknown"
-        elif below_market / max(total_products, 1) >= 0.5:
-            label = "price_leader"
-        elif above_market / max(total_products, 1) >= 0.5:
-            label = "premium_anchor"
-        elif change_count / max(total_products, 1) >= 3:
-            label = "discount_aggressor"
+        if not gap_pcts:
+            label    = "unknown"
+            avg_gap  = 0.0
         else:
-            label = "price_follower"
+            avg_gap  = sum(gap_pcts) / len(gap_pcts)
+            below    = sum(1 for g in gap_pcts if g < -0.05)
+            above    = sum(1 for g in gap_pcts if g > 0.05)
+            n        = len(gap_pcts)
+
+            if below / n >= 0.5:
+                label = "price_leader"
+            elif above / n >= 0.5:
+                label = "premium_anchor"
+            elif change_count >= n * 2:
+                label = "discount_aggressor"
+            else:
+                label = "price_follower"
 
         strategies[comp] = {
             "competitor_name":    comp,
             "strategy_label":     label,
             "avg_price_gap_pct":  round(avg_gap * 100, 2),
             "price_change_count": change_count,
-            "flash_sales_count":  0,   # filled by next module
+            "flash_sales_count":  0,
             "insights": {
-                "below_market_products": below_market,
-                "above_market_products": above_market,
-                "total_products_analysed": total_products,
+                "skus_analysed":  len(gap_pcts),
+                "avg_gap_pct":    round(avg_gap * 100, 2),
             },
         }
 
