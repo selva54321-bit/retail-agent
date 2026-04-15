@@ -216,56 +216,194 @@ def _flash_sale_detector(payload: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  MODULE 3 — Price Pattern Analyser
+#  MODULE 3 — Price Drop Pattern Analyser
+#  Per (competitor × SKU): detect day-of-week pattern, drop magnitude,
+#  consistency, and predict the next likely drop date.
 # ─────────────────────────────────────────────────────────────────
 
 DAY_NAMES = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
 
+
 def _price_pattern_analyser(payload: dict) -> dict:
     """
-    Detect day-of-week price drop patterns.
-    e.g. "Poorvika drops prices most often on Fridays"
-    """
-    retailer_id = payload["retailer_id"]
-    strategies  = payload["strategies"]
+    For each (competitor × catalog_sku) pair, analyse the full price history to:
+      1. Find which day of week drops happen most
+      2. Compute average and max drop percentage
+      3. Score consistency (how reliably it happens every N days)
+      4. Predict the next drop date
+      5. Persist patterns to price_drop_patterns DB
 
-    for comp in list(strategies.keys()):
-        history = db.get_price_history_for_intel(retailer_id, comp, days=30)
-        if len(history) < 7:
+    Requires at least 4 price observations to compute a pattern.
+    """
+    retailer_id    = payload["retailer_id"]
+    strategies     = payload["strategies"]
+    scraped        = payload["scraped_records"]
+
+    # Get unique (competitor, sku) pairs from this cycle
+    comp_sku_pairs: set[tuple] = set()
+    for r in scraped:
+        comp = r.get("competitor_name", "")
+        sku  = r.get("catalog_sku", "")
+        if comp and sku:
+            comp_sku_pairs.add((comp, sku))
+
+    all_patterns: list[dict] = []
+
+    for comp, sku in comp_sku_pairs:
+        history = db.get_price_history_by_sku(retailer_id, comp, sku, days=60)
+        if len(history) < 4:
             continue
 
-        # Count price drops by day of week
-        drops_by_day: dict[int, int] = defaultdict(int)
-        rows_by_product: dict[str, list] = defaultdict(list)
+        # Sort by time
+        history.sort(key=lambda x: x.get("scraped_at", ""))
 
-        for row in history:
-            pname = row.get("product_name_raw", "")[:60]
-            rows_by_product[pname].append(row)
+        prices   = [float(r["price"]) for r in history if r.get("price")]
+        dates    = [r.get("scraped_at", "")[:10] for r in history]
+        pname    = history[-1].get("product_name_raw", "")[:80]
 
-        for pname, rows in rows_by_product.items():
-            rows_sorted = sorted(rows, key=lambda x: x.get("scraped_at",""))
-            for i in range(1, len(rows_sorted)):
+        if len(prices) < 4:
+            continue
+
+        # ── Detect all price drops ────────────────────────────────
+        drop_events: list[dict] = []
+        for i in range(1, len(prices)):
+            if prices[i-1] <= 0:
+                continue
+            change_pct = (prices[i-1] - prices[i]) / prices[i-1]
+            if change_pct >= 0.01:    # 1%+ drop
                 try:
-                    prev_p = float(rows_sorted[i-1].get("price", 0))
-                    cur_p  = float(rows_sorted[i].get("price", 0))
-                    if prev_p > 0 and (prev_p - cur_p) / prev_p > 0.02:
-                        dt_str = rows_sorted[i].get("scraped_at", "")[:10]
-                        day_num = datetime.strptime(dt_str, "%Y-%m-%d").weekday()
-                        drops_by_day[day_num] += 1
+                    dt      = datetime.strptime(dates[i], "%Y-%m-%d")
+                    drop_events.append({
+                        "date":      dates[i],
+                        "weekday":   dt.weekday(),
+                        "drop_pct":  round(change_pct * 100, 2),
+                        "from_price": prices[i-1],
+                        "to_price":  prices[i],
+                    })
                 except Exception:
                     continue
 
-        if drops_by_day:
-            peak_day = max(drops_by_day, key=drops_by_day.get)
-            peak_count = drops_by_day[peak_day]
-            total_drops = sum(drops_by_day.values())
+        if not drop_events:
+            continue
 
-            if total_drops >= 3 and peak_count / total_drops >= 0.35:
-                pattern = f"Drops prices most often on {DAY_NAMES[peak_day]}s"
-                strategies[comp]["insights"]["price_pattern"] = pattern
+        total_obs = len(prices)
+        drop_count = len(drop_events)
 
-    payload["strategies"] = strategies
+        # ── Day-of-week distribution ──────────────────────────────
+        drops_by_day: dict[int, list] = defaultdict(list)
+        for ev in drop_events:
+            drops_by_day[ev["weekday"]].append(ev["drop_pct"])
+
+        peak_day      = max(drops_by_day, key=lambda d: len(drops_by_day[d]))
+        peak_day_count = len(drops_by_day[peak_day])
+        day_concentration = peak_day_count / drop_count   # 0–1
+
+        # ── Drop magnitude ────────────────────────────────────────
+        all_drop_pcts = [ev["drop_pct"] for ev in drop_events]
+        avg_drop_pct  = sum(all_drop_pcts) / len(all_drop_pcts)
+        max_drop_pct  = max(all_drop_pcts)
+
+        # ── Consistency score ─────────────────────────────────────
+        # How many of the peak_day occurrences in the date range had a drop?
+        # Estimate weeks covered
+        try:
+            first_dt = datetime.strptime(dates[0], "%Y-%m-%d")
+            last_dt  = datetime.strptime(dates[-1], "%Y-%m-%d")
+            weeks_covered = max(1, (last_dt - first_dt).days / 7)
+        except Exception:
+            weeks_covered = 1
+
+        # Expected occurrences of peak_day in observed window
+        expected_peak_days = max(1, weeks_covered)
+        # How many actually had drops?
+        consistency = min(1.0, peak_day_count / expected_peak_days)
+
+        # ── Predict next drop date ────────────────────────────────
+        last_drop_date  = drop_events[-1]["date"]
+        next_predicted  = _predict_next_drop(last_drop_date, peak_day,
+                                             avg_interval_days=_avg_interval(drop_events))
+
+        # ── Build pattern summary ─────────────────────────────────
+        pattern = {
+            "competitor_name":    comp,
+            "catalog_sku":        sku,
+            "product_name":       pname,
+            "peak_day_of_week":   peak_day,
+            "avg_drop_pct":       round(avg_drop_pct, 2),
+            "max_drop_pct":       round(max_drop_pct, 2),
+            "drop_count":         drop_count,
+            "total_observations": total_obs,
+            "consistency_score":  round(consistency, 3),
+            "last_drop_date":     last_drop_date,
+            "next_predicted_date": next_predicted,
+            "day_concentration":  round(day_concentration, 3),
+        }
+        all_patterns.append(pattern)
+
+        # Persist to DB
+        db.upsert_price_drop_pattern(retailer_id, pattern)
+
+        # ── Build human-readable insight ──────────────────────────
+        if consistency >= 0.3 and drop_count >= 2:
+            day_name = DAY_NAMES[peak_day]
+            insight  = (f"Drops {pname[:35]} on {day_name}s "
+                        f"~{avg_drop_pct:.1f}% avg "
+                        f"(next: {next_predicted})")
+
+            if comp in strategies:
+                existing = strategies[comp]["insights"].get("price_patterns", [])
+                existing.append(insight)
+                strategies[comp]["insights"]["price_patterns"] = existing[:3]
+
+                # Upgrade the legacy single string too (for backward compat)
+                if len(existing) == 1:
+                    strategies[comp]["insights"]["price_pattern"] = insight
+
+    payload["strategies"]     = strategies
+    payload["drop_patterns"]  = all_patterns
     return payload
+
+
+def _avg_interval(drop_events: list[dict]) -> float:
+    """Average days between consecutive drop events."""
+    if len(drop_events) < 2:
+        return 7.0   # default guess: weekly
+    intervals = []
+    for i in range(1, len(drop_events)):
+        try:
+            d1 = datetime.strptime(drop_events[i-1]["date"], "%Y-%m-%d")
+            d2 = datetime.strptime(drop_events[i]["date"],   "%Y-%m-%d")
+            intervals.append((d2 - d1).days)
+        except Exception:
+            continue
+    return sum(intervals) / len(intervals) if intervals else 7.0
+
+
+def _predict_next_drop(last_drop_date: str,
+                       peak_weekday: int,
+                       avg_interval_days: float) -> str:
+    """
+    Predict the next likely drop date.
+    Strategy: start from (last_drop + avg_interval), then advance to
+    the nearest occurrence of peak_weekday.
+    """
+    from datetime import timedelta
+    try:
+        last_dt   = datetime.strptime(last_drop_date, "%Y-%m-%d")
+        candidate = last_dt + timedelta(days=max(1, int(avg_interval_days)))
+
+        # Advance to the nearest peak_weekday at or after candidate
+        days_ahead = (peak_weekday - candidate.weekday()) % 7
+        next_dt    = candidate + timedelta(days=days_ahead)
+
+        # Never predict in the past
+        today = datetime.now()
+        if next_dt < today:
+            next_dt = today + timedelta(days=(peak_weekday - today.weekday()) % 7 or 7)
+
+        return next_dt.strftime("%Y-%m-%d")
+    except Exception:
+        return ""
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -361,6 +499,7 @@ def run_intel_node(state: AgentState) -> dict:
     strategies    = result.get("strategies", {})
     flash_events  = result.get("flash_events", [])
     opportunities = result.get("opportunities", [])
+    drop_patterns = result.get("drop_patterns", [])
 
     # Persist strategy labels to DB
     intel_list = list(strategies.values())
@@ -369,12 +508,26 @@ def run_intel_node(state: AgentState) -> dict:
     # Print summary
     print(f"[Intel] Competitor strategies:")
     for comp, data in strategies.items():
-        pattern = data["insights"].get("price_pattern", "")
-        label   = data["strategy_label"]
-        gap     = data["avg_price_gap_pct"]
-        sign    = "+" if gap >= 0 else ""
-        print(f"  {comp:25} → {label:22} (avg {sign}{gap:.1f}% vs market)"
-              + (f" | {pattern}" if pattern else ""))
+        patterns = data["insights"].get("price_patterns",
+                   [data["insights"].get("price_pattern", "")])
+        label    = data["strategy_label"]
+        gap      = data["avg_price_gap_pct"]
+        sign     = "+" if gap >= 0 else ""
+        pat_str  = " | " + patterns[0] if patterns and patterns[0] else ""
+        print(f"  {comp:25} → {label:22} (avg {sign}{gap:.1f}% vs market){pat_str}")
+
+    if drop_patterns:
+        actionable = [p for p in drop_patterns if p["consistency_score"] >= 0.3]
+        print(f"[Intel] 📉 {len(drop_patterns)} price drop pattern(s) detected "
+              f"({len(actionable)} actionable):")
+        for p in sorted(drop_patterns, key=lambda x: x["consistency_score"], reverse=True)[:5]:
+            if p["consistency_score"] < 0.2:
+                continue
+            print(f"  {p['competitor_name']:20} | {p['product_name'][:35]:35} | "
+                  f"{DAY_NAMES[p['peak_day_of_week']]}s "
+                  f"~{p['avg_drop_pct']:.1f}% drop | "
+                  f"consistency={p['consistency_score']:.0%} | "
+                  f"next≈{p['next_predicted_date']}")
 
     if flash_events:
         print(f"[Intel] ⚡ {len(flash_events)} flash sale(s) detected:")
@@ -398,6 +551,7 @@ def run_intel_node(state: AgentState) -> dict:
         "strategy_details":    strategies,
         "flash_sales":         flash_events,
         "opportunities":       opportunities,
+        "drop_patterns":       drop_patterns,
     }
 
     return {

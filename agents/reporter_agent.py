@@ -13,6 +13,8 @@ from core.state import AgentState
 from core.llm   import get_llm
 from datetime   import datetime
 
+DAY_NAMES = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+
 
 REPORTER_SYSTEM = """You are the morning briefing writer for RetailAgent.
 Write a concise, plain-English briefing for a retail store owner.
@@ -77,10 +79,11 @@ def run_reporter_node(state: AgentState) -> dict:
         catalog_lines += "\n".join(f"- {a['message']}" for a in stock_outs[:3])
 
     # Intel context
-    strategies   = intel_insights.get("competitor_strategies", {})
-    flash_sales  = intel_insights.get("flash_sales", [])
-    fast_movers  = intel_insights.get("fast_movers", [])
+    strategies    = intel_insights.get("competitor_strategies", {})
+    flash_sales   = intel_insights.get("flash_sales", [])
+    fast_movers   = intel_insights.get("fast_movers", [])
     opportunities = intel_insights.get("opportunities", [])
+    drop_patterns = intel_insights.get("drop_patterns", [])
 
     intel_lines = ""
     if strategies:
@@ -88,8 +91,19 @@ def run_reporter_node(state: AgentState) -> dict:
         intel_lines += "\n".join(
             f"- {comp}: {label}" for comp, label in strategies.items()
         )
+    if drop_patterns:
+        actionable_pats = [p for p in drop_patterns if p.get("consistency_score", 0) >= 0.3]
+        if actionable_pats:
+            intel_lines += f"\n\nPrice drop predictions:\n"
+            for p in actionable_pats[:4]:
+                intel_lines += (
+                    f"- {p['competitor_name']} likely drops "
+                    f"{p['product_name'][:40]} on {DAY_NAMES[p['peak_day_of_week']]}s "
+                    f"by ~{p['avg_drop_pct']:.1f}% "
+                    f"(next predicted: {p['next_predicted_date']})\n"
+                )
     if flash_sales:
-        intel_lines += f"\n\nFlash sales detected ({len(flash_sales)}):\n"
+        intel_lines += f"\n\nFlash sales detected ({len(flash_sales)}) — DO NOT MATCH:\n"
         intel_lines += "\n".join(
             f"- {f['competitor']}: {f['product'][:40]} dropped {f['drop_pct']}%"
             for f in flash_sales[:3]
@@ -203,6 +217,20 @@ def _template_briefing(state, total, cheapest, above, anomalies, actionable, ale
         for f in flash_sales[:3]:
             lines.append(f"  {f['competitor']}: {f['product'][:40]} "
                          f"dropped {f['drop_pct']}%")
+
+    # Drop pattern predictions
+    drop_patterns = intel_insights.get("drop_patterns", [])
+    actionable_pats = [p for p in drop_patterns if p.get("consistency_score", 0) >= 0.3]
+    if actionable_pats:
+        lines.append(f"\n📅 PREDICTED PRICE DROPS:")
+        for p in sorted(actionable_pats, key=lambda x: x.get("next_predicted_date",""))[:4]:
+            lines.append(
+                f"  {p['competitor_name']}: {p['product_name'][:40]} — "
+                f"expect ~{p['avg_drop_pct']:.1f}% drop on "
+                f"{DAY_NAMES[p['peak_day_of_week']]} "
+                f"(next: {p['next_predicted_date']}, "
+                f"consistency: {p['consistency_score']:.0%})"
+            )
 
     # Catalog spy findings
     new_arrivals = [a for a in catalog_alerts if a["type"] == "new_arrival"]

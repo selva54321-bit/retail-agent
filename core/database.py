@@ -175,8 +175,27 @@ def init_db():
         computed_at         TEXT
     );
 
-    CREATE INDEX IF NOT EXISTS idx_market_intel_retailer
-        ON market_intelligence(retailer_id, competitor_name);
+    -- ── NEW: Price drop patterns per competitor × product ──────────
+    CREATE TABLE IF NOT EXISTS price_drop_patterns (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        retailer_id         INTEGER,
+        competitor_name     TEXT,
+        catalog_sku         TEXT,
+        product_name        TEXT,
+        peak_day_of_week    INTEGER,   -- 0=Mon … 6=Sun
+        avg_drop_pct        REAL,      -- average % drop when it drops
+        max_drop_pct        REAL,      -- largest single drop observed
+        drop_count          INTEGER,   -- total drops observed
+        total_observations  INTEGER,   -- total price readings
+        consistency_score   REAL,      -- drop_count/weeks_observed (0–1)
+        last_drop_date      TEXT,
+        next_predicted_date TEXT,
+        updated_at          TEXT,
+        UNIQUE(retailer_id, competitor_name, catalog_sku)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_drop_patterns
+        ON price_drop_patterns(retailer_id, competitor_name);
     """)
 
     conn.commit()
@@ -617,5 +636,85 @@ def get_price_history_for_intel(retailer_id: int,
           AND scraped_at >= datetime('now', ? || ' days')
         ORDER BY scraped_at ASC
     """, (retailer_id, competitor_name, f"-{days}")).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ─── PRICE DROP PATTERNS ──────────────────────
+
+def upsert_price_drop_pattern(retailer_id: int, pattern: dict):
+    """Save/update a detected price drop pattern for a competitor×product."""
+    conn = get_conn()
+    now  = datetime.now().isoformat()
+    conn.execute("""
+        INSERT INTO price_drop_patterns
+            (retailer_id, competitor_name, catalog_sku, product_name,
+             peak_day_of_week, avg_drop_pct, max_drop_pct,
+             drop_count, total_observations, consistency_score,
+             last_drop_date, next_predicted_date, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(retailer_id, competitor_name, catalog_sku) DO UPDATE SET
+            peak_day_of_week   = excluded.peak_day_of_week,
+            avg_drop_pct       = excluded.avg_drop_pct,
+            max_drop_pct       = excluded.max_drop_pct,
+            drop_count         = excluded.drop_count,
+            total_observations = excluded.total_observations,
+            consistency_score  = excluded.consistency_score,
+            last_drop_date     = excluded.last_drop_date,
+            next_predicted_date = excluded.next_predicted_date,
+            updated_at         = excluded.updated_at
+    """, (
+        retailer_id,
+        pattern["competitor_name"],
+        pattern["catalog_sku"],
+        pattern["product_name"],
+        pattern["peak_day_of_week"],
+        pattern["avg_drop_pct"],
+        pattern["max_drop_pct"],
+        pattern["drop_count"],
+        pattern["total_observations"],
+        pattern["consistency_score"],
+        pattern.get("last_drop_date", ""),
+        pattern.get("next_predicted_date", ""),
+        now,
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_price_drop_patterns(retailer_id: int,
+                             competitor_name: str = None) -> list[dict]:
+    """Get stored drop patterns, optionally filtered by competitor."""
+    conn = get_conn()
+    if competitor_name:
+        rows = conn.execute(
+            "SELECT * FROM price_drop_patterns WHERE retailer_id=? AND competitor_name=? "
+            "ORDER BY consistency_score DESC",
+            (retailer_id, competitor_name)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM price_drop_patterns WHERE retailer_id=? "
+            "ORDER BY consistency_score DESC, avg_drop_pct DESC",
+            (retailer_id,)
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_price_history_by_sku(retailer_id: int,
+                              competitor_name: str,
+                              catalog_sku: str,
+                              days: int = 60) -> list[dict]:
+    """Get price history for a specific competitor+SKU combination."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT competitor_name, catalog_sku, product_name_raw,
+               price, in_stock, scraped_at
+        FROM price_history
+        WHERE retailer_id=? AND competitor_name=? AND catalog_sku=?
+          AND scraped_at >= datetime('now', ? || ' days')
+        ORDER BY scraped_at ASC
+    """, (retailer_id, competitor_name, catalog_sku, f"-{days}")).fetchall()
     conn.close()
     return [dict(r) for r in rows]
