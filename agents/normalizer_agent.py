@@ -178,6 +178,10 @@ def run_normalizer_node(state: AgentState) -> dict:
         pre_sku  = record.get("catalog_sku", "")
         pre_name = record.get("catalog_product_name", "")
         if pre_sku and pre_name:
+            if record.get("confidence") == "medium":
+                # Do not map it exactly; intel_agent will pick it up as an alternative!
+                continue
+
             match = {
                 "retailer_sku":            pre_sku,
                 "retailer_product_name":   pre_name,

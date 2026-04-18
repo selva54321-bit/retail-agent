@@ -195,15 +195,15 @@ def _best_name_from_card(card, sels: dict) -> str:
 #  BS4 EXTRACTION
 # ─────────────────────────────────────────────────────────────────
 
-def _bs4_extract(html: str, domain: str, searched_name: str) -> list[dict]:
+def _bs4_extract(html: str, domain: str, searched_name: str, db_selectors: dict = None) -> list[dict]:
     """
     Scan up to 20 product cards, score each against searched_name,
     return top N sorted by confidence.
     """
     soup = BeautifulSoup(html, "html.parser")
-    sels = SITE_SELECTORS.get(domain, GENERIC)
+    sels = db_selectors if db_selectors else SITE_SELECTORS.get(domain, GENERIC)
 
-    cards = soup.select(sels["card"])
+    cards = soup.select(sels.get("card", ""))
     if not cards:
         cards = soup.select(GENERIC["card"])
 
@@ -320,7 +320,24 @@ def run_extractor(state: ScraperSubState) -> dict:
         print(f"    [Extractor] ✗ No DOM section to parse")
         return {"products": []}
 
-    raw     = _bs4_extract(dom, domain, pname)
+    raw     = _bs4_extract(dom, domain, pname, db_selectors=state.get("selector_config", {}))
+
+    if not raw and state.get("page_html"):
+        print(f"    [Extractor] 0 matches found via current CSS! Triggering DOM Auto-Healer...")
+        try:
+            from agents.scraper.auto_dom_tester import auto_discover_from_html
+            new_sels, new_raw = auto_discover_from_html(
+                html=state["page_html"],
+                url=url,
+                retailer_id=state.get("retailer_id"),
+                update_db=True
+            )
+            if new_sels and new_raw:
+                raw = new_raw
+                print(f"    [Extractor] Self-Healing successful! Extracted {len(raw)} items.")
+        except Exception as e:
+            print(f"    [Extractor] Auto-Healer exception: {e}")
+
     records = _build_records(raw, state, method="bs4")
 
     if records:

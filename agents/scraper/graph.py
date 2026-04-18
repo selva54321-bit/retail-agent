@@ -99,13 +99,22 @@ def run_scraper_subgraph(target: dict) -> list[dict]:
         list of price record dicts ready to save to price_history DB.
         Empty list on failure.
     """
+    import json
+    sel_config_str = target.get("selector_config", "{}")
+    try:
+        sel_config = json.loads(sel_config_str) if sel_config_str else {}
+    except Exception:
+        sel_config = {}
+
     initial_state: ScraperSubState = {
         # Input
+        "retailer_id":          target.get("retailer_id", -1),
         "url":                  target["url"],
         "competitor_name":      target["competitor_name"],
         "catalog_sku":          target.get("catalog_sku", ""),
         "catalog_product_name": target.get("catalog_product_name", ""),
         "scrape_method":        target.get("scrape_method", "dynamic"),
+        "selector_config":      sel_config,
 
         # Filled by sub-agents
         "page_html":   "",

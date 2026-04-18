@@ -20,11 +20,13 @@ class ScraperSubState(TypedDict):
     """
 
     # ── Input — set once before sub-graph starts ─────────────────
+    retailer_id:          int
     url:                  str
     competitor_name:      str
     catalog_sku:          str
     catalog_product_name: str
     scrape_method:        str       # "static" | "dynamic" | "anti_bot"
+    selector_config:      dict      # dynamically discovered css selectors
 
     # ── Navigator output ─────────────────────────────────────────
     page_html:   str                # full rendered HTML after JS execution

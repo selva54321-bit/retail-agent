@@ -455,6 +455,34 @@ def _growth_opportunity_finder(payload: dict) -> dict:
     return payload
 
 
+# ─────────────────────────────────────────────────────────────────
+#  MODULE 5 — Alternative Product Finder
+# ─────────────────────────────────────────────────────────────────
+
+def _find_market_alternatives(payload: dict) -> dict:
+    """
+    Finds products that the scraper extracted with 'medium' confidence.
+    Instead of matching them as direct price-competes, treat them as
+    market alternatives (e.g. competitor carrying Xiaomi instead of Samsung).
+    """
+    scraped = payload.get("scraped_records", [])
+    alternatives = []
+    seen = set()
+    for r in scraped:
+        if r.get("confidence") == "medium" and r.get("catalog_product_name"):
+            key = (r.get("competitor_name"), r.get("product_name_raw"))
+            if key not in seen:
+                seen.add(key)
+                alternatives.append({
+                    "competitor": r.get("competitor_name", ""),
+                    "target_product": r.get("catalog_product_name", ""),
+                    "found_product": r.get("product_name_raw", ""),
+                    "price": r.get("price", 0)
+                })
+    payload["market_alternatives"] = alternatives
+    return payload
+
+
 # ─── Compose RunnableLambda pipeline ─────────────────────────────
 
 _intel_pipeline = (
@@ -462,6 +490,7 @@ _intel_pipeline = (
     | RunnableLambda(_flash_sale_detector)
     | RunnableLambda(_price_pattern_analyser)
     | RunnableLambda(_growth_opportunity_finder)
+    | RunnableLambda(_find_market_alternatives)
 )
 
 
@@ -500,6 +529,7 @@ def run_intel_node(state: AgentState) -> dict:
     flash_events  = result.get("flash_events", [])
     opportunities = result.get("opportunities", [])
     drop_patterns = result.get("drop_patterns", [])
+    alternatives  = result.get("market_alternatives", [])
 
     # Persist strategy labels to DB
     intel_list = list(strategies.values())
@@ -540,6 +570,9 @@ def run_intel_node(state: AgentState) -> dict:
         for op in opportunities[:3]:
             print(f"  [{op['priority'].upper()}] {op['type']}: {op['product'][:45]}")
 
+    if alternatives:
+        print(f"[Intel] 🔄 {len(alternatives)} market alternative(s) found (medium confidence matches)")
+
     # Merge with existing intel_insights from catalog_spy
     existing_insights = state.get("intel_insights", {})
     merged_insights   = {
@@ -552,6 +585,7 @@ def run_intel_node(state: AgentState) -> dict:
         "flash_sales":         flash_events,
         "opportunities":       opportunities,
         "drop_patterns":       drop_patterns,
+        "market_alternatives": alternatives,
     }
 
     return {

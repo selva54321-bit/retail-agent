@@ -84,6 +84,7 @@ def run_reporter_node(state: AgentState) -> dict:
     fast_movers   = intel_insights.get("fast_movers", [])
     opportunities = intel_insights.get("opportunities", [])
     drop_patterns = intel_insights.get("drop_patterns", [])
+    alternatives  = intel_insights.get("market_alternatives", [])
 
     intel_lines = ""
     if strategies:
@@ -115,10 +116,17 @@ def run_reporter_node(state: AgentState) -> dict:
             for fm in fast_movers[:3]
         )
     if opportunities:
-        intel_lines += f"\n\nGrowth opportunities:\n"
+        intel_lines += f"\n\nOpportunities ({len(opportunities)}):\n"
         intel_lines += "\n".join(
             f"- [{op['priority'].upper()}] {op['type']}: {op['product'][:45]}"
             for op in opportunities[:3]
+        )
+
+    if alternatives:
+        intel_lines += f"\n\nBrand Alternatives Detected ({len(alternatives)}):\n"
+        intel_lines += "\n".join(
+            f"- Competitor {alt['competitor']} doesn't match {alt['target_product']} exactly. Instead they offer: {alt['found_product']} for ₹{alt['price']:,.0f}"
+            for alt in alternatives[:3]
         )
 
     # Build context as LangChain Document
@@ -251,5 +259,12 @@ def _template_briefing(state, total, cheapest, above, anomalies, actionable, ale
         lines.append(f"\n💡 GROWTH OPPORTUNITIES:")
         for op in opportunities[:3]:
             lines.append(f"  [{op['priority'].upper()}] {op['reason']}")
+
+    alternatives = intel_insights.get("market_alternatives", [])
+    if alternatives:
+        lines.append(f"\n🔄 BRAND ALTERNATIVES DETECTED:")
+        for alt in alternatives[:3]:
+            lines.append(f"  Instead of '{alt['target_product'][:35]}...', {alt['competitor']} offers:")
+            lines.append(f"  → '{alt['found_product'][:40]}' at ₹{alt['price']:,.0f}")
 
     return "\n".join(lines)
