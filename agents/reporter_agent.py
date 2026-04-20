@@ -62,7 +62,7 @@ def run_reporter_node(state: AgentState) -> dict:
         for r in sorted(actionable, key=lambda x: abs(x["price_change_pct"]), reverse=True)[:3]
     ]) or "No urgent changes needed."
 
-    regular_alerts = [a for a in alerts if a.get("type") != "marketing_opportunity"]
+    regular_alerts = [a for a in alerts if a.get("type") not in ("marketing_opportunity", "demand_forecast")]
     alert_lines = "\n".join([
         f"- [{a['severity'].upper()}] {a['message']}"
         for a in regular_alerts[:5]
@@ -72,6 +72,11 @@ def run_reporter_node(state: AgentState) -> dict:
     if marketing_ops:
         alert_lines += "\n\nMarketing Opportunities:\n"
         alert_lines += "\n".join(f"- {a['message']}" for a in marketing_ops[:3])
+
+    forecast_ops = [a for a in alerts if a.get("type") == "demand_forecast"]
+    if forecast_ops:
+        alert_lines += "\n\nDemand Forecasting:\n"
+        alert_lines += "\n".join(f"- {a['message']}" for a in forecast_ops[:3])
 
     # Catalog spy context
     new_arrivals = [a for a in catalog_alerts if a["type"] == "new_arrival"]
@@ -213,6 +218,12 @@ def _template_briefing(state, total, cheapest, above, anomalies, actionable, ale
     if marketing_ops:
         lines.append(f"\n🎯 MARKETING OPPORTUNITIES (Your Unique Price Window):")
         for op in marketing_ops[:3]:
+            lines.append(f"  {op['message']}")
+
+    forecast_ops = [a for a in alerts if a.get("type") == "demand_forecast"]
+    if forecast_ops:
+        lines.append(f"\n🔮 DEMAND FORECASTING:")
+        for op in forecast_ops[:3]:
             lines.append(f"  {op['message']}")
 
     # Competitor strategy labels

@@ -24,6 +24,19 @@ from core.state import AgentState
 from core       import database as db
 
 
+def _get_seasonality_signal() -> str:
+    month = datetime.now().month
+    if month in (9, 10, 11):
+        return "Deepavali/Festive season"
+    elif month in (12, 1):
+        return "New Year season"
+    elif month in (4, 5):
+        return "Summer season"
+    elif month in (7, 8):
+        return "Independence Day sales"
+    return "the upcoming season"
+
+
 # ─── Analysis functions (each wrapped as RunnableLambda) ─────────
 
 def _price_rank_analysis(payload: dict) -> dict:
@@ -138,10 +151,11 @@ def _alert_builder(payload: dict) -> dict:
             })
 
         if data["trend"] == "falling":
+            season = _get_seasonality_signal()
             alerts.append({
-                "type": "trend", "sku": sku, "product": data["product_name"],
-                "message": f"📉 Market prices for {data['product_name']} trending downward.",
-                "severity": "low", "at": now,
+                "type": "demand_forecast", "sku": sku, "product": data["product_name"],
+                "message": f"📈 Prices dropping market-wide for {data['product_name']}. Demand is likely rising / category cooling — stock up before {season}!",
+                "severity": "medium", "at": now,
             })
 
         if data["price_rank"] == 1 and data["retailer_price"] < data["min_competitor_price"]:
