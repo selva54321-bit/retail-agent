@@ -62,10 +62,16 @@ def run_reporter_node(state: AgentState) -> dict:
         for r in sorted(actionable, key=lambda x: abs(x["price_change_pct"]), reverse=True)[:3]
     ]) or "No urgent changes needed."
 
+    regular_alerts = [a for a in alerts if a.get("type") != "marketing_opportunity"]
     alert_lines = "\n".join([
         f"- [{a['severity'].upper()}] {a['message']}"
-        for a in alerts[:5]
-    ]) or "No alerts."
+        for a in regular_alerts[:5]
+    ]) or "No regular alerts."
+
+    marketing_ops = [a for a in alerts if a.get("type") == "marketing_opportunity"]
+    if marketing_ops:
+        alert_lines += "\n\nMarketing Opportunities:\n"
+        alert_lines += "\n".join(f"- {a['message']}" for a in marketing_ops[:3])
 
     # Catalog spy context
     new_arrivals = [a for a in catalog_alerts if a["type"] == "new_arrival"]
@@ -202,6 +208,12 @@ def _template_briefing(state, total, cheapest, above, anomalies, actionable, ale
             lines.append(f"    → {r['reasoning'][:120]}")
     else:
         lines.append("\n✅ Pricing is well-positioned. No urgent changes needed.")
+
+    marketing_ops = [a for a in alerts if a.get("type") == "marketing_opportunity"]
+    if marketing_ops:
+        lines.append(f"\n🎯 MARKETING OPPORTUNITIES (Your Unique Price Window):")
+        for op in marketing_ops[:3]:
+            lines.append(f"  {op['message']}")
 
     # Competitor strategy labels
     strategies = intel_insights.get("competitor_strategies", {})

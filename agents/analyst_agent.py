@@ -144,6 +144,15 @@ def _alert_builder(payload: dict) -> dict:
                 "severity": "low", "at": now,
             })
 
+        if data["price_rank"] == 1 and data["retailer_price"] < data["min_competitor_price"]:
+            gap = data["min_competitor_price"] - data["retailer_price"]
+            alerts.append({
+                "type": "marketing_opportunity", "sku": sku, "product": data["product_name"],
+                "message": (f"🎉 You're the only store with {data['product_name']} below ₹{data['min_competitor_price']:,.0f} "
+                            f"(You are ₹{gap:,.0f} cheaper than the nearest competitor). Use this in your marketing!"),
+                "severity": "low", "at": now,
+            })
+
     payload["alerts"] = alerts
     return payload
 
