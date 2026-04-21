@@ -209,10 +209,18 @@ def _interactive_search(base_url: str, product_name: str) -> str:
 
         # ── Step 1: Open the homepage ─────────────────────────────
         print(f"    [Navigator] Opening {base_url} ...")
-        page.goto(base_url, wait_until="domcontentloaded", timeout=30000)
-        # Let the page fully settle before looking for search box
-        time.sleep(random.uniform(2.0, 3.0))
-        page.keyboard.press("Escape") # close any initial popups
+        try:
+            # Use 'commit' instead of 'domcontentloaded' to avoid hanging on heavy tracking scripts
+            page.goto(base_url, wait_until="commit", timeout=20000)
+        except Exception as e:
+            print(f"    [Navigator] goto timeout/error: {e} - proceeding to search box anyway...")
+            
+        # Let the page render enough for the search box to appear
+        time.sleep(random.uniform(2.0, 4.0))
+        try:
+            page.keyboard.press("Escape") # close any initial popups
+        except Exception:
+            pass
         time.sleep(0.5)
 
         # ── Step 2: Find the search box (Locator API) ─────────────
@@ -282,8 +290,8 @@ def _find_search_box(page, domain: str):
             # Use locator() not wait_for_selector()
             # locator() is lazy — check visibility before using
             loc = page.locator(sel).first
-            # wait_for checks both existence and visibility
-            loc.wait_for(state="visible", timeout=8000)
+            # Give it up to 15 seconds to appear, since we skipped waiting for domcontentloaded
+            loc.wait_for(state="visible", timeout=15000)
             if loc.is_enabled():
                 print(f"    [Navigator] ✓ Search box: {sel}")
                 return loc
