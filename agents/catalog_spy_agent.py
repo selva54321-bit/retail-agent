@@ -115,44 +115,9 @@ def _new_arrival_detector(payload: dict) -> dict:
 
 # ─────────────────────────────────────────────────────────────────
 #  MODULE 3 — Discontinued Detector
-#  Products that were in the competitor catalog previously but
+#  Products that were in the competitor catalog last cycle but
 #  not scraped this cycle — possibly discontinued or sold out.
-#
-#  Strength layers:
-#    1. Skip if last_seen is TODAY (name-variation false positive)
-#    2. Require minimum absence gap (7 days not seen)
-#    3. Require minimum historical sightings (5+) to be "established"
-#    4. Fuzzy name matching — don't flag minor name variations
-#    5. Category relevance — skip obviously irrelevant products
 # ─────────────────────────────────────────────────────────────────
-
-_IRRELEVANT_KEYWORDS = {
-    "playstation", "ps5", "ps4", "xbox", "nintendo", "airpods",
-    "earbuds", "headphone", "speaker", "camera", "router", "printer",
-    "laptop", "tablet", "ipad", "macbook", "keyboard", "mouse",
-}
-
-MIN_ABSENCE_DAYS    = 7     # Must be missing for at least 7 days
-MIN_TIMES_SEEN      = 5     # Must have been seen at least 5 times to be "established"
-FUZZY_MATCH_THRESH  = 0.75  # If a DB name is 75%+ similar to any scraped name, it's NOT discontinued
-
-
-def _fuzzy_similar(name: str, name_set: set, threshold: float = FUZZY_MATCH_THRESH) -> bool:
-    """Check if `name` is fuzzy-similar to any name in the set."""
-    from difflib import SequenceMatcher
-    name_lower = name.lower()
-    for scraped_name in name_set:
-        ratio = SequenceMatcher(None, name_lower, scraped_name).ratio()
-        if ratio >= threshold:
-            return True
-    return False
-
-
-def _is_irrelevant(name: str) -> bool:
-    """Filter out products clearly outside the retailer's category."""
-    name_lower = name.lower()
-    return any(kw in name_lower for kw in _IRRELEVANT_KEYWORDS)
-
 
 def _discontinued_detector(payload: dict) -> dict:
     scraped      = payload["scraped_records"]
@@ -160,8 +125,6 @@ def _discontinued_detector(payload: dict) -> dict:
 
     # Get full competitor catalog from DB (all historical products)
     all_catalog = db.get_competitor_catalog(retailer_id)
-
-    today_str = datetime.now().strftime("%Y-%m-%d")
 
     # Index what was scraped this cycle: {competitor_name: set of product names}
     this_cycle: dict[str, set] = defaultdict(set)
@@ -173,62 +136,30 @@ def _discontinued_detector(payload: dict) -> dict:
 
     discontinued = []
     for row in all_catalog:
-        comp      = row.get("competitor_name", "")
-        name      = row.get("product_name", "")
+        comp = row.get("competitor_name", "")
+        name = row.get("product_name", "")
         last_seen = row.get("last_seen_at", "")
 
+        # Only flag if: seen before today, not in this cycle's scraped data
         if not last_seen or not comp or not name:
             continue
 
-        # ── Layer 1: Skip if last seen TODAY ──────────────────────
-        # If upsert_competitor_catalog just updated this row today,
-        # it's NOT discontinued — just a name-variation mismatch.
-        if last_seen[:10] == today_str:
-            continue
-
-        # ── Layer 2: Skip if competitor wasn't scraped this cycle ─
+        # Was this competitor scraped this cycle?
         if comp not in this_cycle:
             continue
 
-        # ── Layer 3: Skip if product WAS found this cycle (exact) ─
-        if name.lower() in this_cycle[comp]:
-            continue
+        # Was this product NOT found this cycle?
+        if name.lower() not in this_cycle[comp]:
+            # Must have been seen at least 3 times before to be "established"
+            if row.get("times_seen", 0) >= 3:
+                discontinued.append({
+                    "type":       "discontinued",
+                    "competitor": comp,
+                    "product":    name,
+                    "last_seen":  last_seen[:10],
+                    "times_seen": row.get("times_seen", 0),
+                })
 
-        # ── Layer 4: Fuzzy match — skip if name closely matches ───
-        # Catches "Samsung 108 cm ... UA43F5" vs "Samsung 108 cm ... UA43F50"
-        if _fuzzy_similar(name, this_cycle[comp]):
-            continue
-
-        # ── Layer 5: Skip irrelevant products ─────────────────────
-        if _is_irrelevant(name):
-            continue
-
-        # ── Layer 6: Must be "established" — seen enough times ────
-        times_seen = row.get("times_seen", 0)
-        if times_seen < MIN_TIMES_SEEN:
-            continue
-
-        # ── Layer 7: Must have been absent long enough ────────────
-        try:
-            last_dt = datetime.fromisoformat(last_seen[:19])
-            days_absent = (datetime.now() - last_dt).days
-        except (ValueError, TypeError):
-            continue
-
-        if days_absent < MIN_ABSENCE_DAYS:
-            continue
-
-        discontinued.append({
-            "type":         "discontinued",
-            "competitor":   comp,
-            "product":      name,
-            "last_seen":    last_seen[:10],
-            "times_seen":   times_seen,
-            "days_absent":  days_absent,
-        })
-
-    # Sort by days_absent descending — longest-missing first
-    discontinued.sort(key=lambda x: x.get("days_absent", 0), reverse=True)
     payload["discontinued"] = discontinued[:10]
     return payload
 
@@ -268,13 +199,11 @@ def _alert_builder(payload: dict) -> dict:
         })
 
     for a in discontinued:
-        days = a.get("days_absent", "?")
         catalog_alerts.append({
             "type":     "discontinued",
             "severity": "low",
             "message":  (f"🔻 Possibly discontinued at {a['competitor']}: "
-                         f"{a['product'][:50]} (absent {days} days, "
-                         f"seen {a['times_seen']}x before)"),
+                         f"{a['product'][:50]} (last seen {a['last_seen']})"),
             "data":     a,
             "at":       now,
         })
