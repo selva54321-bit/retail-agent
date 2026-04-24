@@ -89,7 +89,7 @@ Return ONLY this JSON (no markdown, no explanation, no extra keys):
 
 CATEGORY_COMPETITORS = {
     "electronics":   ["Amazon India", "Flipkart", "Poorvika", "Croma"],
-    "televisions":   ["Amazon India", "Flipkart", "Poorvika", "Croma"],
+    "televisions":   ["Amazon India", "Flipkart", "Poorvika", "Croma","girias"],
     "tv":            ["Amazon India", "Flipkart", "Poorvika", "Croma"],
     "mobile":        ["Amazon India", "Flipkart", "Poorvika", "Sangeetha"],
     "appliances":    ["Amazon India", "Flipkart", "Croma", "Reliance Digital"],
@@ -145,7 +145,7 @@ def _make_demo_profile() -> RetailerProfile:
         store_name           = "The TV Shop Coimbatore",
         category             = category,
         subcategories        = ["LED TV", "OLED TV", "Smart TV", "4K TV"],
-        location             = "Saibaba Colony, Coimbatore, Tamil Nadu",
+        location             = "Coimbatore, Tamil Nadu",
         brand_positioning    = "specialist_retailer",
         known_competitors    = get_competitors_for_category(category),
         pricing_strategy     = "competitive_parity",

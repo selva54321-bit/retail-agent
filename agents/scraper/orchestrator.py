@@ -69,24 +69,38 @@ def run_scraper_node(state: AgentState) -> dict:
     """
     LangGraph node: Scraper (main graph).
 
-    For each active (competitor × product) target:
-      → invokes the scraper sub-graph (navigator → fetcher → extractor)
-      → collects price records
-      → saves to price_history DB
-
-    Sub-graph runs concurrently (max 3 workers) to parallelise
-    the Playwright browser sessions across competitors.
+    Reads scrape targets directly from the execution_plan built by Planner
+    (and optionally extended by Scout this cycle). This ensures only
+    explicitly known competitors are scraped — not stale DB entries.
     """
-    all_targets = db.get_competitors(state["retailer_id"])
-    retailer_id = state["retailer_id"]
+    retailer_id    = state["retailer_id"]
+    execution_plan = state.get("execution_plan")
 
-    if not all_targets:
+    # ── Build active_targets from this cycle's execution plan ────
+    if execution_plan and execution_plan.scrape_targets:
+        active_targets = [
+            {
+                "retailer_id":          retailer_id,
+                "competitor_name":      t.competitor_name,
+                "url":                  t.url,
+                "scrape_method":        t.scrape_method,
+                "catalog_sku":          t.catalog_sku,
+                "catalog_product_name": t.catalog_product_name,
+                "selector_config":      "{}",
+            }
+            for t in execution_plan.scrape_targets
+        ]
+    else:
+        # Fallback: read only planner-registered targets from DB
+        active_targets = [
+            t for t in db.get_competitors(retailer_id)
+            if t.get("source", "planner") == "planner"
+        ]
+
+    if not active_targets:
         print("\n[Scraper] No targets registered.")
         return {"scraped_records": [], "scraping_complete": True,
                 "current_node": "scraper"}
-
-    # ── Use all registered targets ───────────────────────────────
-    active_targets = all_targets
 
     n_prod  = len({t.get("catalog_sku","") for t in active_targets if t.get("catalog_sku")})
     n_comp  = len({t.get("competitor_name","") for t in active_targets})

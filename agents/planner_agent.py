@@ -54,7 +54,7 @@ COMPETITOR_URL_MAP = {
     "vasanth":           ("https://www.vasanthandco.in",       "dynamic"),
     "poorvika":          ("https://www.poorvika.com",          "dynamic"),
     "sangeetha":         ("https://www.sangeetha.com",         "dynamic"),
-    "girias":            ("https://www.girias.com",            "dynamic"),
+    "girias":            ("https://www.giriasindia.com",        "dynamic"),
     "darling":           ("https://www.darlingretail.com",     "dynamic"),
     "sathya":            ("https://www.sathya.in",             "dynamic"),
     "pai international": ("https://www.pai.in",                "dynamic"),
