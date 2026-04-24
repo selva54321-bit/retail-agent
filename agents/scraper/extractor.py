@@ -238,7 +238,6 @@ def _bs4_extract(html: str, domain: str, searched_name: str, db_selectors: dict 
                 break
 
         if not price:
-            print(f"    [Extractor-Debug] Amazon dropped (no price found). Name: '{name[:50]}'")
             continue
 
         # Original / struck-through price
