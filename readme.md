@@ -17,12 +17,21 @@ graph TD
     INTAKE -- Yes --> PLANNER[Planner Agent: Mission Design]
     
     PLANNER --> SCOUT[Scout Agent: Regional Discovery]
-    SCOUT --> SCRAPER[Scraper Sub-Graph: Parallel Execution]
     
-    subgraph "Scraper Engine (Per Target Thread)"
-        direction LR
-        NAV[Navigator: Playwright Stealth] --> FETCH[Fetcher: Noise Removal]
-        FETCH --> EXTRACT[Extractor: CSS + Auto-Heal]
+    subgraph SCRAPER [Scraper Sub-Agent: Parallel Execution]
+        QUEUE[Target Queue] --> WORKERS{ThreadPoolExecutor}
+        WORKERS --> T1[Amazon]
+        WORKERS --> T2[Flipkart]
+        WORKERS --> T3[Croma/Local]
+        
+        subgraph ENGINE [Internal Scraper Engine]
+            direction LR
+            NAV[Navigator] --> FETCH[Fetcher] --> EXTRACT[Extractor]
+        end
+        
+        T1 -.-> ENGINE
+        T2 -.-> ENGINE
+        T3 -.-> ENGINE
     end
     
     SCRAPER --> NORM[Normalizer Agent: SKU Matching]
