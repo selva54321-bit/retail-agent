@@ -1,93 +1,79 @@
-# RetailAgent — LangChain + LangGraph Edition
+# RetailAgent — LangChain + LangGraph Market Intelligence
 
-## Overview
-RetailAgent is an automated, multi-agent AI framework for monitoring competitor retail pricing. Built using LangGraph, it autonomously identifies local and national competitors, dynamically scrapes their websites for specific SKUs, normalizes product variations using AI embeddings, and issues daily strategic price recommendations based on your business rules.
+[![LangChain](https://img.shields.io/badge/LangChain-latest-blue)](https://github.com/langchain-ai/langchain)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Stateful-green)](https://github.com/langchain-ai/langgraph)
+[![Playwright](https://img.shields.io/badge/Playwright-Stealth-red)](https://playwright.dev/)
+[![Gemini](https://img.shields.io/badge/Google-Gemini_Pro-orange)](https://deepmind.google/technologies/gemini/)
 
-## Quick Start
-```bash
-pip install -r requirements.txt
-playwright install chromium
-python main.py --demo
+## 🚀 Overview
+RetailAgent is an autonomous, multi-agent AI framework designed for enterprise-grade competitor monitoring and pricing strategy. It operates as a state-aware reasoning engine that identifies competitors, stabilizes its own browser sessions, matches products via AI embeddings, and detects long-term market trends.
+
+```mermaid
+graph TD
+    START((Start Cycle)) --> INTAKE{Profile Exists?}
+    
+    INTAKE -- No --> ONBOARD[Intake Agent: Onboarding]
+    ONBOARD --> PLANNER
+    INTAKE -- Yes --> PLANNER[Planner Agent: Mission Design]
+    
+    PLANNER --> SCOUT[Scout Agent: Regional Discovery]
+    SCOUT --> SCRAPER[Scraper Sub-Graph: Parallel Execution]
+    
+    subgraph "Scraper Engine (Playwright + BS4)"
+        NAV[Navigator: Stealth Session] --> FETCH[Fetcher: Noise Removal]
+        FETCH --> EXTRACT[Extractor: Selector Logic]
+    end
+    
+    SCRAPER --> NORM[Normalizer Agent: SKU Matching]
+    NORM --> ANALYST[Analyst Agent: Price Anomalies]
+    ANALYST --> SPY[Catalog Spy: Inventory Intelligence]
+    SPY --> INTEL[Intel Agent: Pattern Prediction]
+    INTEL --> PRICING[Pricing Agent: Recommendation]
+    
+    PRICING --> REPORT[Reporter Agent: Executive Briefing]
+    REPORT --> LOG((End Cycle / Log))
 ```
 
-## Agent Functionality Overview
-The pipeline operates as a state machine. The full cycle flows seamlessly from capturing retail targets down to generating actionable insights.
+## 🛠️ Stabilized Core Architecture
+The system is hardened for high-scale retail operations:
+*   **Navigation Resilience**: Uses `wait_until="commit"` and autonomous recovery to bypass heavy scripts on Amazon/Flipkart.
+*   **Fuzzy Product Matching**: Implements `SequenceMatcher` logic (75% threshold) to handle slight name variations.
+*   **Zero-Noise Intelligence**: A 7-layer verification pipeline ensures "Discontinued" alerts are only issued for products missing for 7+ days.
 
-1. **Intake Agent (`intake_agent.py`)**: Interactively interviews the user (if it's their first time) to understand the nature of their retail store, business strategy (e.g., penetration vs. premium), and minimum acceptable margin floors. 
-2. **Planner Agent (`planner_agent.py`)**: Takes the user's local product catalog and maps them to known national competitors, building a blueprint of exactly which SKUs need to be searched on which domains today.
-3. **Scout Agent (`scout_agent.py`)**: Dynamically discovers local/regional competitors. It searches the area around the retailer's zip code to find relevant chain stores (e.g., "Poorvika", "Croma") and registers them into the monitoring database.
-4. **Scraper Sub-Graph (`scraper/`)**: The engine of data extraction. It runs a parallel, 3-stage mini-graph via a ThreadPoolExecutor for every single target:
-   - **Navigator**: Uses Playwright to physically load the target homepage and type into the search bar, mimicking human behavior to bypass simple bot protection.
-   - **Fetcher**: Identifies the primary product container in the DOM and aggressively strips out noise (headers, footers, javascript, tracking pixels) to massively shrink the HTML payload.
-   - **Extractor**: Uses precise CSS selectors to parse product cards. It calculates string/token overlaps to dynamically filter out irrelevant search results on the fly.
-5. **Normalizer Agent (`normalizer_agent.py`)**: The ultimate matching engine. Because vendors use messy variations of names (e.g. "LG 32 inch" vs "LG 80cms"), the Normalizer calculates AI embeddings wrapped in ChromaDB to verify if the scraped item definitively matches your internal catalog SKU.
-6. **Analyst Agent (`analyst_agent.py`)**: Performs heavy statistical crunching on the matched records to identify price gaps, market rank, and flag severe anomalies (e.g., predatory competitor pricing).
-7. **Catalog Spy Agent (`catalog_spy_agent.py`)**: Monitors the competitor's *entire* visible catalog. It tracks stock availability (OOS alerts), identifies "new arrivals" (products the competitor carries but you don't), and detects discontinued items by comparing cross-cycle data.
-8. **Intel Agent (`intel_agent.py`)**: The strategic core. Analyzes 30-cycle price history to classify competitor strategies (e.g., "price leader", "premium anchor"), detects flash sales to avoid "race-to-the-bottom" matching, and identifies day-of-week pricing patterns (e.g., predicting the exact day and magnitude of future price drops using historical consistency scoring).
-9. **Pricing Agent (`pricing_agent.py`)**: Acts directly against your configured strategy (match lowest, parity, etc.) to generate discrete recommendations with guaranteed mathematical margin safeguards.
-10. **Reporter Agent (`reporter_agent.py`)**: Uses a pure LCEL chain to weave pricing alerts, catalog shifts, predicted price drops, and competitor intelligence into a clean executive "Morning Briefing".
+---
 
-## Recent Architecture Upgrades
-* **Robust Web Extraction**: Transitioned entirely away from expensive Vision AI scraping in favor of hyper-optimized Playwright DOM retrieval coupled with BeautifulSoup. This ensures lightning-fast extraction and bypasses cloud-model latency.
-* **Component-Resigned Match Scoring**: Extensively patched complex extraction edge-cases (like Amazon heavily nesting or splitting product titles across multiple `<h2>` nodes or randomly swapping out their price CSS variables `a-offscreen`/`a-price-whole`) via robust text concatenation.
-* **Granular Database Tracking**: Improved the competitor registry SQLite schema to properly separate and cache concurrent product mappings per domain via `(retailer_id, url, catalog_sku)` tracking so products never overwrite each other.
-* **Decoupled Embedding Engine**: Resolved upstream API bugs with the Gemini endpoints (`models/gemini-embedding-001`) and decoupled the underlying embedding layer from the Chat layer. This allows the system to seamlessly route intensive vector computations through a free local Ollama server if the cloud API key fails, while keeping Gemini 2.5 strictly focused on high-intelligence logic.
-* **Market Intelligence Engine**: Added dedicated `Catalog Spy` and `Intel` layers to detect stock-outs, flash sales, and long-term competitor pricing patterns (including day-of-week drop predictions and magnitude estimation), moving beyond simple point-in-time comparisons to highly predictive historical trend analysis.
+## 🗄️ Database Architecture: The "Live Ledger"
+The agent uses a **persistent, incremental update pattern**. It doesn't wait for the cycle to end to save data; it updates the database at every stage.
 
-## LangChain / LangGraph Patterns Used Per File
+| Table | Agent | Purpose |
+| :--- | :--- | :--- |
+| `competitor_catalog` | CatalogSpy | **Inventory Memory**: Tracks historical sightings and stock-out frequency. |
+| `price_history` | Analyst | Log of every price change for predictive trend analysis. |
+| `scraped_data` | Scraper | Raw harvest data cached mid-cycle for resilience. |
+| `product_catalog` | Pricing | Your internal SKU list and auto-applied price updates. |
 
-| File | LangChain/LangGraph Pattern |
-|------|-----------------------------|
-| `core/state.py` | `TypedDict` + Pydantic models for LangGraph state management |
-| `core/llm.py` | `ChatGoogleGenerativeAI` / `ChatOllama` factory with retry logic |
-| `core/graph.py` | `StateGraph` orchestrator with `Command` routing and `interrupt` for human-in-the-loop |
-| `agents/intake_agent.py` | `ConversationChain` for guided retailer onboarding |
-| `agents/planner_agent.py` | LCEL planning chain: `prompt | llm | JsonOutputParser` |
-| `agents/scout_agent.py` | Regional Chain Lookup + deduplication logic |
-| `agents/scraper/` | Sub-graph orchestration: `navigator` (Playwright) → `fetcher` → `extractor` (BS4) |
-| `agents/normalizer_agent.py` | LLM-based product matching via Chroma DB embeddings + LLM judgment fallbacks |
-| `agents/analyst_agent.py` | `RunnableLambda` pipeline for price trend and anomaly detection |
-| `agents/catalog_spy_agent.py` | `RunnableLambda` pipeline for multi-stage stock and catalog analysis |
-| `agents/intel_agent.py` | `RunnableLambda` pipeline for strategic classification and pattern detection |
-| `agents/pricing_agent.py` | Structured output (`with_structured_output`) for strategy-based recommendations |
-| `agents/reporter_agent.py` | LCEL prompt chaining (`prompt \| llm \| StrOutputParser`) for generating morning briefings |
+---
 
-## Graph Structure
-```
-START
-  │
-  ├─► [intake]     ← Onboarding (if profile missing)
-  │
-  ▼
-[planner]          ← Strategic target mapping
-  │
-  ▼
-[scout]            ← Regional chain discovery 
-  │
-  ▼
-[scraper]          ← Parallel Sub-graph (Navigator → Fetcher → Extractor)
-  │
-  ▼
-[normalizer]       ← Cross-competitor SKU matching (Embeddings)
-  │
-  ▼
-[analyst]          ← Competitive price analysis & alerts
-  │
-  ▼
-[catalog_spy]      ← Stock tracking & new arrival discovery
-  │
-  ▼
-[intel]            ← Strategy classification & pattern analysis
-  │
-  ▼
-[pricing]          ← Recommendation engine
-  │
-  ├─► [auto_apply]    (if auto_apply_prices=True)
-  └─► [queue_review]  (Interactive CLI approval)
-  │
-  ▼
-[reporter]         ← Executive briefing generator
-  │
-  ▼
-[cycle_log] ──► END
-```
+## 🕵️ Troubleshooting: Reading the Intel Logs
+When an agent reports `0 records found`, use this guide to diagnose:
+
+1.  **"The Scraper is Blind"**: 
+    *   *Log:* `Results HTML captured (800,000+ chars)` but `0 matches found`.
+    *   *Meaning:* The page loaded fine, but the CSS selectors are outdated. Fix `SITE_SELECTORS` in `extractor.py`.
+2.  **"Site is Blocking"**:
+    *   *Log:* `Results wait timed out — using what loaded`.
+    *   *Meaning:* The site is too slow or detected the bot. Navigator needs more wait time or a fresh Proxy.
+3.  **"Item is Missing"**:
+    *   *Log:* `DOM Tester suggested: h2.sorry-txt`.
+    *   *Meaning:* The website explicitly displayed a "No Results" message. The item is truly not in their catalog.
+
+---
+
+## 🗺️ Roadmap
+- [x] **v1.0 Stable**: Autonomous scraping and intelligence pipeline.
+- [ ] **v1.1 API Layer**: FastAPI wrapper for LangGraph cycle management.
+- [ ] **v1.2 Scale**: Transition from SQLite to **MongoDB** for schemaless, high-volume JSON storage.
+- [ ] **v1.3 Dashboard**: Next.js + Shadcn UI Command Center.
+
+---
+*Built for the next generation of Retail Intelligence.*
