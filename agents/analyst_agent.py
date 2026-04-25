@@ -213,28 +213,8 @@ def run_analyst_node(state: AgentState) -> dict:
 
     # Persist to DB
     if analytics_list:
-        conn = db.get_conn()
-        conn.executemany("""
-            INSERT INTO analytics_results
-                (retailer_id, cycle_id, retailer_sku, product_name,
-                 retailer_price, competitor_prices_json,
-                 min_competitor_price, avg_competitor_price, max_competitor_price,
-                 price_rank, total_competitors, price_gap_to_min, price_gap_pct_to_min,
-                 trend, is_anomaly, anomaly_reason, computed_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, [
-            (retailer_id, cycle_id,
-             a["retailer_sku"], a["product_name"], a["retailer_price"],
-             str(a["competitor_prices"]),
-             a["min_competitor_price"], a["avg_competitor_price"], a["max_competitor_price"],
-             a["price_rank"], a["total_competitors"],
-             a["price_gap_to_min"], a["price_gap_pct_to_min"],
-             a["trend"], int(a["is_anomaly"]), a["anomaly_reason"],
-             datetime.now().isoformat())
-            for a in analytics_list
-        ])
-        conn.commit()
-        conn.close()
+        db.save_analytics_results(retailer_id, cycle_id, analytics_list)
+
 
     cheapest = sum(1 for a in analytics_list if a["price_rank"] == 1)
     print(f"[Analyst] {len(analytics_list)} products analyzed | "

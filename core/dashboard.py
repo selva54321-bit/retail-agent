@@ -268,13 +268,10 @@ def interactive_approval(state: AgentState, retailer_id: int) -> AgentState:
     # Update DB with approval decisions
     approved_recs = [r for r in actionable if r.get("approved") is not None]
     if approved_recs:
-        conn = db.get_conn()
-        for r in approved_recs:
-            conn.execute(
-                "UPDATE recommendations SET approved=? WHERE retailer_sku=? AND cycle_id=?",
-                (int(r["approved"]), r["retailer_sku"], state["cycle_id"])
-            )
-        conn.commit()
-        conn.close()
+        db.update_recommendation_approvals(
+            retailer_id=retailer_id,
+            cycle_id=state["cycle_id"],
+            decisions=approved_recs,
+        )
 
     return state

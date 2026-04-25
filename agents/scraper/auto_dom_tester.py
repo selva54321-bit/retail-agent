@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from core.llm import get_llm
 from agents.scraper.extractor import _parse_price, _best_name_from_card
-from core.database import get_conn
+from core import database as db
 
 class SelectorHypothesis(BaseModel):
     card: str = Field(description="CSS selector for the outermost product card container")
@@ -131,13 +131,11 @@ def auto_discover_from_html(html: str, url: str, retailer_id: int = None, update
                 print(f"   - {it['name'][:50]} | ₹{it['price']} (was {it['original']})")
                 
             if update_db and retailer_id is not None:
-                conn = get_conn()
-                conn.execute(
-                    "UPDATE competitor_registry SET selector_config = ? WHERE retailer_id=? AND url LIKE ?",
-                    (json.dumps(sels), retailer_id, f"%{domain}%")
+                db.update_selector_config_for_domain(
+                    retailer_id=retailer_id,
+                    domain=domain,
+                    selector_config=sels,
                 )
-                conn.commit()
-                conn.close()
                 print(f"[DOM Tester] Saved updated selectors to database for domain {domain}!")
             return sels, items
         else:

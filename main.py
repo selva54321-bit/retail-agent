@@ -28,7 +28,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.database       import init_db, list_retailer_profiles
+from core.database       import init_db, list_retailer_profiles, check_mongodb_health
 from core.llm            import (set_provider, check_ollama, check_gemini,
                                   check_grok, get_active_provider,
                                   get_active_model_name, _config)
@@ -91,6 +91,18 @@ def print_banner():
 def check_status():
     print("\n📋 SYSTEM STATUS")
 
+    mongo = check_mongodb_health()
+    print(f"\n  MongoDB:")
+    print(f"    URI:           {mongo['uri']}")
+    print(f"    Database:      {mongo['db']}")
+    print(f"    Driver:        pymongo {mongo['driver']}")
+    print(f"    Reachable:     {'✅' if mongo['ok'] else '❌'}")
+    if mongo["ok"]:
+        print(f"    Ping latency:  {mongo['latency_ms']} ms")
+        print(f"    Collections:   {mongo['collections']}")
+    else:
+        print(f"    Error:         {mongo['error'][:120]}")
+
     ollama = check_ollama()
     print(f"\n  Ollama:")
     print(f"    Running:       {'✅' if ollama['running'] else '❌'}")
@@ -135,6 +147,10 @@ def main():
     args = parser.parse_args()
 
     init_db()
+    mongo = check_mongodb_health()
+    if not mongo["ok"]:
+        raise RuntimeError(f"MongoDB startup check failed: {mongo['error']}")
+    print(f"  [Startup] MongoDB OK ({mongo['db']} @ {mongo['uri']}, {mongo['latency_ms']} ms)")
 
     if args.check:
         check_status()
