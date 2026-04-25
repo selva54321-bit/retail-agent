@@ -19,9 +19,10 @@ graph TD
     PLANNER --> SCOUT[Scout Agent: Regional Discovery]
     SCOUT --> SCRAPER[Scraper Sub-Graph: Parallel Execution]
     
-    subgraph "Scraper Engine (Playwright + BS4)"
-        NAV[Navigator: Stealth Session] --> FETCH[Fetcher: Noise Removal]
-        FETCH --> EXTRACT[Extractor: Selector Logic]
+    subgraph "Scraper Engine (Per Target Thread)"
+        direction LR
+        NAV[Navigator: Playwright Stealth] --> FETCH[Fetcher: Noise Removal]
+        FETCH --> EXTRACT[Extractor: CSS + Auto-Heal]
     end
     
     SCRAPER --> NORM[Normalizer Agent: SKU Matching]
