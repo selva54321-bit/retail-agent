@@ -456,30 +456,316 @@ def _growth_opportunity_finder(payload: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  MODULE 5 — Alternative Product Finder
+#  MODULE 5 — Price Window Finder (Your Unique Price Advantage)
+#  Find products where the retailer IS the cheapest — marketing signal.
 # ─────────────────────────────────────────────────────────────────
 
-def _find_market_alternatives(payload: dict) -> dict:
+def _price_window_finder(payload: dict) -> dict:
     """
-    Finds products that the scraper extracted with 'medium' confidence.
-    Instead of matching them as direct price-competes, treat them as
-    market alternatives (e.g. competitor carrying Xiaomi instead of Samsung).
+    For each product where price_rank == 1 (you're cheapest):
+      - How much cheaper vs next competitor?
+      - How many consecutive cycles have you held this position?
+      - Build a ready-to-use marketing message.
     """
-    scraped = payload.get("scraped_records", [])
-    alternatives = []
-    seen = set()
-    for r in scraped:
-        if r.get("confidence") == "medium" and r.get("catalog_product_name"):
-            key = (r.get("competitor_name"), r.get("product_name_raw"))
-            if key not in seen:
-                seen.add(key)
-                alternatives.append({
-                    "competitor": r.get("competitor_name", ""),
-                    "target_product": r.get("catalog_product_name", ""),
-                    "found_product": r.get("product_name_raw", ""),
-                    "price": r.get("price", 0)
-                })
-    payload["market_alternatives"] = alternatives
+    analytics   = payload.get("analytics", [])
+    retailer_id = payload["retailer_id"]
+
+    price_windows = []
+
+    for a in analytics:
+        if a.get("price_rank") != 1:
+            continue
+
+        sku            = a.get("retailer_sku", "")
+        my_price       = a.get("retailer_price", 0)
+        comp_prices    = a.get("competitor_prices", {})
+        product_name   = a.get("product_name", "")
+
+        if not comp_prices or not my_price:
+            continue
+
+        next_cheapest_comp  = min(comp_prices, key=comp_prices.get)
+        next_cheapest_price = comp_prices[next_cheapest_comp]
+        gap_abs = next_cheapest_price - my_price
+        gap_pct = gap_abs / next_cheapest_price * 100 if next_cheapest_price else 0
+
+        # Count consecutive cycles at rank 1
+        try:
+            rows = db.get_recent_price_rank_history(retailer_id, sku, limit=10)
+            streak = 0
+            for row in rows:
+                if row["price_rank"] == 1:
+                    streak += 1
+                else:
+                    break
+        except Exception:
+            streak = 1
+
+        msg = (f"{product_name[:50]} — you're ₹{gap_abs:,.0f} cheaper than "
+               f"{next_cheapest_comp} (₹{my_price:,.0f} vs ₹{next_cheapest_price:,.0f})")
+        if streak >= 3:
+            msg += f" — cheapest for {streak} cycles in a row"
+
+        price_windows.append({
+            "sku":                  sku,
+            "product_name":         product_name,
+            "your_price":           my_price,
+            "next_cheapest_comp":   next_cheapest_comp,
+            "next_cheapest_price":  next_cheapest_price,
+            "gap_abs":              round(gap_abs, 0),
+            "gap_pct":              round(gap_pct, 1),
+            "consecutive_cheapest": streak,
+            "marketing_message":    msg,
+        })
+
+    price_windows.sort(key=lambda x: x["gap_pct"], reverse=True)
+    payload["price_windows"] = price_windows
+    return payload
+
+
+# ─────────────────────────────────────────────────────────────────
+#  MODULE 6 — Demand Forecaster
+#
+#  Three signals combined per catalog SKU:
+#
+#  Signal 1 — Price Drop Velocity
+#    If competitors dropped prices repeatedly in the last 14 days,
+#    one of two things is happening:
+#      a) Demand RISING  → competition intensifying, customers active
+#      b) Demand FALLING → trying to clear slow-moving stock
+#    We disambiguate using stockout rate: rising stockouts + drops = (a)
+#
+#  Signal 2 — Stockout Frequency (from competitor_catalog)
+#    Frequent stock-outs at competitors = product flying off shelves.
+#    This is the strongest demand signal available.
+#
+#  Signal 3 — Indian Retail Seasonality Calendar
+#    Hardcoded upcoming sale events with typical demand surge windows.
+#    If an event is <30 days away, flag it + recommend stocking up.
+#
+#  Output: demand_signal ∈ {rising, falling, stable, unknown}
+#          + a plain-English recommendation for the retailer
+# ─────────────────────────────────────────────────────────────────
+
+# Indian retail calendar — (month, day, name, demand_categories, surge_days_before)
+INDIAN_SALE_EVENTS = [
+    (1,  26, "Republic Day Sale",    ["electronics","tv","mobile"],  7),
+    (2,  14, "Valentine's Day Sale", ["mobile","accessories"],        5),
+    (3,  21, "Holi Sale",            ["electronics","tv","mobile"],   5),
+    (8,  15, "Independence Day Sale",["electronics","tv","mobile"],   7),
+    (10,  1, "Navratri/Dussehra",    ["tv","electronics","appliance"],14),
+    (11,  1, "Deepavali Season",     ["tv","electronics","appliance"],21),
+    (11, 11, "Singles Day Sale",     ["electronics","mobile","tv"],   5),
+    (11, 23, "Black Friday / Big Billion", ["tv","electronics"],      7),
+    (12, 25, "Christmas Sale",       ["tv","electronics","mobile"],  10),
+    (1,  14, "Pongal / Makar Sankranti", ["tv","appliance"],         10),
+]
+
+
+def _days_to_next_event(category: str) -> tuple[str, int]:
+    """
+    Return (event_name, days_until) for the nearest upcoming sale event
+    relevant to this category. Returns ('', 9999) if none within 60 days.
+    """
+    from datetime import timedelta
+    today = datetime.now()
+    cat   = category.lower()
+
+    best_name = ""
+    best_days = 9999
+
+    for month, day, name, categories, surge_days in INDIAN_SALE_EVENTS:
+        # Build event date for this year and next year
+        for year_offset in (0, 1):
+            try:
+                event_dt = datetime(today.year + year_offset, month, day)
+            except ValueError:
+                continue
+
+            days_until = (event_dt - today).days
+            if days_until < 0:
+                continue
+
+            # Check category relevance
+            relevant = any(c in cat for c in categories)
+            if not relevant:
+                continue
+
+            # Within the surge window?
+            if days_until <= surge_days + 30 and days_until < best_days:
+                best_days = days_until
+                best_name = name
+
+    return best_name, best_days if best_name else ("", 9999)
+
+
+def _demand_forecaster(payload: dict) -> dict:
+    """
+    Module 5: Demand Forecaster.
+    Runs per catalog SKU, combining price velocity, stockout rate,
+    and seasonal calendar to produce a demand signal + recommendation.
+    """
+    retailer_id = payload["retailer_id"]
+    catalog     = payload.get("catalog", [])
+    category    = payload.get("category", "electronics")
+    drop_patterns = payload.get("drop_patterns", [])
+
+    if not catalog:
+        payload["demand_forecasts"] = []
+        return payload
+
+    forecasts = []
+
+    for product in catalog:
+        sku   = product.get("sku", "")
+        pname = product.get("name", "")
+        if not sku:
+            continue
+
+        # ── Signal 1: Price drop velocity ────────────────────────
+        velocity_rows = db.get_price_velocity(retailer_id, sku, days=14)
+        comp_prices: dict[str, list] = defaultdict(list)
+        for r in velocity_rows:
+            comp_prices[r["competitor_name"]].append(float(r["price"]))
+
+        total_drops    = 0
+        drop_velocity  = 0.0    # avg pct drop across competitors
+        drop_comps     = 0
+
+        for comp, prices in comp_prices.items():
+            if len(prices) < 2:
+                continue
+            comp_drops = sum(
+                (prices[i-1] - prices[i]) / prices[i-1]
+                for i in range(1, len(prices))
+                if prices[i-1] > 0 and prices[i] < prices[i-1]
+            )
+            if comp_drops > 0:
+                drop_velocity += comp_drops / (len(prices) - 1)
+                drop_comps    += 1
+                total_drops   += 1
+
+        if drop_comps > 0:
+            drop_velocity = (drop_velocity / drop_comps) * 100   # to percent
+
+        # ── Signal 2: Stockout rate from competitor_catalog ───────
+        all_catalog_rows = db.get_competitor_catalog(retailer_id)
+        sku_rows = [r for r in all_catalog_rows
+                    if r.get("catalog_sku") == sku and r.get("times_seen", 0) >= 2]
+
+        if sku_rows:
+            total_seen    = sum(r["times_seen"] for r in sku_rows)
+            total_oos     = sum(r["times_out_of_stock"] for r in sku_rows)
+            stockout_rate = total_oos / total_seen if total_seen > 0 else 0.0
+        else:
+            stockout_rate = 0.0
+
+        # ── Signal 3: Seasonal calendar ───────────────────────────
+        event_name, days_to_event = _days_to_next_event(category)
+
+        # ── Combine signals ───────────────────────────────────────
+        #
+        # demand RISING when:
+        #   - stockout_rate >= 0.25 (out of stock 1 in 4 times) OR
+        #   - drop_velocity >= 3% AND total_drops >= 2 competitors AND
+        #     stockout_rate > 0.05 (price drops + some scarcity = hot product)
+        #   - OR event within 21 days in relevant category
+        #
+        # demand FALLING when:
+        #   - drop_velocity >= 5% AND stockout_rate < 0.05
+        #     (aggressive drops but no stock-outs = trying to push slow stock)
+        #   - consistent drops every cycle with no restocking signal
+        #
+        # demand STABLE otherwise
+
+        rising_score  = 0
+        falling_score = 0
+
+        if stockout_rate >= 0.25:
+            rising_score += 3
+        elif stockout_rate >= 0.10:
+            rising_score += 1
+
+        if drop_velocity >= 3.0 and total_drops >= 2:
+            if stockout_rate >= 0.05:
+                rising_score += 2   # drops + some scarcity = rising demand
+            else:
+                falling_score += 2  # drops + no scarcity = clearing slow stock
+
+        if event_name and days_to_event <= 21:
+            rising_score += 3
+        elif event_name and days_to_event <= 45:
+            rising_score += 1
+
+        if drop_velocity >= 8.0 and stockout_rate < 0.03:
+            falling_score += 2   # very aggressive drops, no stock pressure
+
+        # Determine signal
+        if rising_score >= 3:
+            signal     = "rising"
+            confidence = "high" if rising_score >= 5 else "medium"
+        elif falling_score >= 3:
+            signal     = "falling"
+            confidence = "high" if falling_score >= 5 else "medium"
+        elif rising_score >= 1 or falling_score >= 1:
+            signal     = "rising" if rising_score > falling_score else "falling"
+            confidence = "low"
+        else:
+            signal     = "stable"
+            confidence = "low"
+
+        # ── Build recommendation ──────────────────────────────────
+        rec_parts = []
+        if signal == "rising":
+            rec_parts.append(f"Demand for {pname[:35]} is RISING")
+            if stockout_rate >= 0.25:
+                rec_parts.append(
+                    f"— competitors running out of stock ({stockout_rate:.0%} OOS rate)"
+                )
+            if drop_velocity >= 3.0 and total_drops >= 2:
+                rec_parts.append(
+                    f"— {total_drops} competitor(s) dropping prices ({drop_velocity:.1f}% avg)"
+                )
+            if event_name and days_to_event <= 45:
+                rec_parts.append(
+                    f"— {event_name} is {days_to_event} days away"
+                )
+            rec_parts.append("→ Stock up now, consider holding your price")
+
+        elif signal == "falling":
+            rec_parts.append(f"Demand for {pname[:35]} appears COOLING")
+            if drop_velocity >= 5.0:
+                rec_parts.append(
+                    f"— {total_drops} competitor(s) aggressively cutting prices "
+                    f"({drop_velocity:.1f}% avg) with no stock pressure"
+                )
+            rec_parts.append("→ Review your inventory levels, avoid overstocking")
+
+        else:
+            rec_parts.append(
+                f"{pname[:35]}: demand is STABLE — maintain current stock levels"
+            )
+            if event_name and days_to_event <= 60:
+                rec_parts.append(
+                    f"(Note: {event_name} in {days_to_event} days — monitor closely)"
+                )
+
+        recommendation = " ".join(rec_parts)
+
+        forecasts.append({
+            "catalog_sku":           sku,
+            "product_name":          pname,
+            "demand_signal":         signal,
+            "confidence":            confidence,
+            "price_drop_velocity":   round(drop_velocity, 2),
+            "stockout_rate":         round(stockout_rate, 3),
+            "competitor_drop_count": total_drops,
+            "seasonal_event":        event_name,
+            "days_to_event":         days_to_event if event_name else 0,
+            "recommendation":        recommendation,
+        })
+
+    payload["demand_forecasts"] = forecasts
     return payload
 
 
@@ -490,7 +776,8 @@ _intel_pipeline = (
     | RunnableLambda(_flash_sale_detector)
     | RunnableLambda(_price_pattern_analyser)
     | RunnableLambda(_growth_opportunity_finder)
-    | RunnableLambda(_find_market_alternatives)
+    | RunnableLambda(_price_window_finder)
+    | RunnableLambda(_demand_forecaster)
 )
 
 
@@ -501,16 +788,20 @@ _intel_pipeline = (
 def run_intel_node(state: AgentState) -> dict:
     """
     LangGraph node: Intel Agent.
-
-    Runs 4-module competitive intelligence pipeline.
-    Outputs intel_insights dict merged into state.
-    Persists strategy labels to market_intelligence DB.
+    Runs 5-module competitive intelligence pipeline:
+      1. Strategy Classifier
+      2. Flash Sale Detector
+      3. Price Drop Pattern Analyser
+      4. Growth Opportunity Finder
+      5. Demand Forecaster
     """
-    scraped      = state["scraped_records"]
-    analytics    = state["analytics"]
-    retailer_id  = state["retailer_id"]
-    cycle_id     = state["cycle_id"]
+    scraped        = state["scraped_records"]
+    analytics      = state["analytics"]
+    retailer_id    = state["retailer_id"]
+    cycle_id       = state["cycle_id"]
     catalog_alerts = state.get("catalog_alerts", [])
+    catalog        = state["retailer_profile"].catalog
+    category       = state["retailer_profile"].category
 
     print(f"\n[Intel] Running competitive intelligence analysis...")
 
@@ -523,19 +814,22 @@ def run_intel_node(state: AgentState) -> dict:
         "retailer_id":     retailer_id,
         "fast_movers":     state.get("intel_insights", {}).get("fast_movers", []),
         "catalog_alerts":  catalog_alerts,
+        "catalog":         catalog,
+        "category":        category,
     })
 
-    strategies    = result.get("strategies", {})
-    flash_events  = result.get("flash_events", [])
-    opportunities = result.get("opportunities", [])
-    drop_patterns = result.get("drop_patterns", [])
-    alternatives  = result.get("market_alternatives", [])
+    strategies       = result.get("strategies", {})
+    flash_events     = result.get("flash_events", [])
+    opportunities    = result.get("opportunities", [])
+    drop_patterns    = result.get("drop_patterns", [])
+    demand_forecasts = result.get("demand_forecasts", [])
+    price_windows    = result.get("price_windows", [])
 
-    # Persist strategy labels to DB
-    intel_list = list(strategies.values())
-    db.save_market_intelligence(retailer_id, cycle_id, intel_list)
+    # Persist to DB
+    db.save_market_intelligence(retailer_id, cycle_id, list(strategies.values()))
+    db.save_demand_forecasts(retailer_id, cycle_id, demand_forecasts)
 
-    # Print summary
+    # ── Print: strategies ─────────────────────────────────────────
     print(f"[Intel] Competitor strategies:")
     for comp, data in strategies.items():
         patterns = data["insights"].get("price_patterns",
@@ -546,34 +840,51 @@ def run_intel_node(state: AgentState) -> dict:
         pat_str  = " | " + patterns[0] if patterns and patterns[0] else ""
         print(f"  {comp:25} → {label:22} (avg {sign}{gap:.1f}% vs market){pat_str}")
 
+    # ── Print: drop patterns ──────────────────────────────────────
     if drop_patterns:
         actionable = [p for p in drop_patterns if p["consistency_score"] >= 0.3]
-        print(f"[Intel] 📉 {len(drop_patterns)} price drop pattern(s) detected "
+        print(f"[Intel] 📉 {len(drop_patterns)} price drop pattern(s) "
               f"({len(actionable)} actionable):")
         for p in sorted(drop_patterns, key=lambda x: x["consistency_score"], reverse=True)[:5]:
             if p["consistency_score"] < 0.2:
                 continue
             print(f"  {p['competitor_name']:20} | {p['product_name'][:35]:35} | "
                   f"{DAY_NAMES[p['peak_day_of_week']]}s "
-                  f"~{p['avg_drop_pct']:.1f}% drop | "
+                  f"~{p['avg_drop_pct']:.1f}% | "
                   f"consistency={p['consistency_score']:.0%} | "
                   f"next≈{p['next_predicted_date']}")
 
+    # ── Print: flash sales ────────────────────────────────────────
     if flash_events:
         print(f"[Intel] ⚡ {len(flash_events)} flash sale(s) detected:")
         for fe in flash_events[:3]:
             print(f"  {fe['competitor']}: {fe['product'][:40]} "
-                  f"dropped {fe['drop_pct']}% (₹{fe['prev_price']:,.0f} → ₹{fe['cur_price']:,.0f})")
+                  f"dropped {fe['drop_pct']}% "
+                  f"(₹{fe['prev_price']:,.0f} → ₹{fe['cur_price']:,.0f})")
 
+    # ── Print: price windows ──────────────────────────────────────
+    if price_windows:
+        print(f"[Intel] 🏆 {len(price_windows)} price advantage(s) — use in marketing:")
+        for pw in price_windows:
+            print(f"  {pw['marketing_message']}")
+
+    # ── Print: demand forecasts ───────────────────────────────────
+    if demand_forecasts:
+        print(f"[Intel] 📊 Demand forecasts:")
+        signal_icons = {"rising": "🔺", "falling": "🔻", "stable": "➡", "unknown": "❓"}
+        for f in demand_forecasts:
+            icon = signal_icons.get(f["demand_signal"], "❓")
+            conf = f"[{f['confidence']}]"
+            print(f"  {icon} {conf:8} {f['product_name'][:45]}")
+            print(f"           {f['recommendation'][:100]}")
+
+    # ── Print: growth opportunities ───────────────────────────────
     if opportunities:
         print(f"[Intel] 💡 {len(opportunities)} growth opportunity(ies):")
         for op in opportunities[:3]:
             print(f"  [{op['priority'].upper()}] {op['type']}: {op['product'][:45]}")
 
-    if alternatives:
-        print(f"[Intel] 🔄 {len(alternatives)} market alternative(s) found (medium confidence matches)")
-
-    # Merge with existing intel_insights from catalog_spy
+    # ── Merge insights ────────────────────────────────────────────
     existing_insights = state.get("intel_insights", {})
     merged_insights   = {
         **existing_insights,
@@ -585,7 +896,8 @@ def run_intel_node(state: AgentState) -> dict:
         "flash_sales":         flash_events,
         "opportunities":       opportunities,
         "drop_patterns":       drop_patterns,
-        "market_alternatives": alternatives,
+        "demand_forecasts":    demand_forecasts,
+        "price_windows":       price_windows,
     }
 
     return {

@@ -25,6 +25,7 @@ Data flow:
 
 from collections import defaultdict
 from datetime    import datetime
+import re
 
 from langchain_core.runnables import RunnableLambda
 
@@ -115,51 +116,95 @@ def _new_arrival_detector(payload: dict) -> dict:
 
 # ─────────────────────────────────────────────────────────────────
 #  MODULE 3 — Discontinued Detector
-#  Products that were in the competitor catalog last cycle but
-#  not scraped this cycle — possibly discontinued or sold out.
+#  A product is "possibly discontinued" only when:
+#    a) It was seen at least 5 times (established product, not a one-off)
+#    b) It has NOT appeared in the last 7 days
+#    c) The competitor WAS scraped this cycle (so absence is real)
+#    d) No fuzzy-name match exists in this cycle's results either
+#       (handles minor name changes like "Limited Edition" suffix)
 # ─────────────────────────────────────────────────────────────────
 
+def _fuzzy_name_match(name_a: str, name_b: str, threshold: float = 0.80) -> bool:
+    """
+    Simple token-overlap fuzzy match.
+    Returns True if the two names share enough tokens to be the same product.
+    e.g. "LG 32 inch HD TV" vs "LG 32 Inch HD Smart TV (2024)" → True
+    """
+    STOP = {"inch", "inches", "cm", "the", "a", "an", "and", "or",
+            "for", "in", "on", "of", "with", "smart", "led", "tv"}
+
+    def tokens(s: str) -> set:
+        return {t.lower() for t in re.split(r'\W+', s)
+                if t and len(t) > 1 and t.lower() not in STOP}
+
+    ta, tb = tokens(name_a), tokens(name_b)
+    if not ta or not tb:
+        return False
+    overlap = len(ta & tb) / max(len(ta), len(tb))
+    return overlap >= threshold
+
+
 def _discontinued_detector(payload: dict) -> dict:
-    scraped      = payload["scraped_records"]
-    retailer_id  = payload["retailer_id"]
+    scraped     = payload["scraped_records"]
+    retailer_id = payload["retailer_id"]
+    now         = datetime.now()
 
-    # Get full competitor catalog from DB (all historical products)
-    all_catalog = db.get_competitor_catalog(retailer_id)
-
-    # Index what was scraped this cycle: {competitor_name: set of product names}
-    this_cycle: dict[str, set] = defaultdict(set)
+    # ── What was scraped this cycle per competitor ─────────────────
+    # {competitor_name: [product_name_raw, ...]}
+    this_cycle: dict[str, list[str]] = defaultdict(list)
     for r in scraped:
         comp = r.get("competitor_name", "")
         name = r.get("product_name_raw", "")[:250]
         if comp and name:
-            this_cycle[comp].add(name.lower())
+            this_cycle[comp].append(name)
+
+    # ── Get established products from DB ──────────────────────────
+    all_catalog = db.get_competitor_catalog(retailer_id)
 
     discontinued = []
     for row in all_catalog:
-        comp = row.get("competitor_name", "")
-        name = row.get("product_name", "")
+        comp      = row.get("competitor_name", "")
+        name      = row.get("product_name", "")
         last_seen = row.get("last_seen_at", "")
+        times_seen = row.get("times_seen", 0)
 
-        # Only flag if: seen before today, not in this cycle's scraped data
-        if not last_seen or not comp or not name:
-            continue
-
-        # Was this competitor scraped this cycle?
+        # Guard 1: competitor must have been scraped this cycle
         if comp not in this_cycle:
             continue
 
-        # Was this product NOT found this cycle?
-        if name.lower() not in this_cycle[comp]:
-            # Must have been seen at least 3 times before to be "established"
-            if row.get("times_seen", 0) >= 3:
-                discontinued.append({
-                    "type":       "discontinued",
-                    "competitor": comp,
-                    "product":    name,
-                    "last_seen":  last_seen[:10],
-                    "times_seen": row.get("times_seen", 0),
-                })
+        # Guard 2: must be an established product (seen 5+ times)
+        if times_seen < 5:
+            continue
 
+        # Guard 3: must be absent for 7+ days
+        if not last_seen:
+            continue
+        try:
+            last_seen_dt = datetime.fromisoformat(last_seen[:19])
+            days_absent  = (now - last_seen_dt).days
+        except Exception:
+            continue
+
+        if days_absent < 7:
+            continue
+
+        # Guard 4: fuzzy check — maybe it's still there under a slightly different name
+        cycle_names = this_cycle[comp]
+        fuzzy_found = any(_fuzzy_name_match(name, cn, threshold=0.65) for cn in cycle_names)
+        if fuzzy_found:
+            continue
+
+        discontinued.append({
+            "type":       "discontinued",
+            "competitor": comp,
+            "product":    name,
+            "last_seen":  last_seen[:10],
+            "days_absent": days_absent,
+            "times_seen": times_seen,
+        })
+
+    # Sort by days absent descending — longest missing first
+    discontinued.sort(key=lambda x: x["days_absent"], reverse=True)
     payload["discontinued"] = discontinued[:10]
     return payload
 
@@ -199,11 +244,13 @@ def _alert_builder(payload: dict) -> dict:
         })
 
     for a in discontinued:
+        days = a.get("days_absent", 0)
         catalog_alerts.append({
             "type":     "discontinued",
             "severity": "low",
             "message":  (f"🔻 Possibly discontinued at {a['competitor']}: "
-                         f"{a['product'][:50]} (last seen {a['last_seen']})"),
+                         f"{a['product'][:50]} "
+                         f"(absent {days}d, last seen {a['last_seen']})"),
             "data":     a,
             "at":       now,
         })
