@@ -292,4 +292,49 @@ def load_demo_profile() -> RetailerProfile:
     Public entry point used by main.py --demo flag.
     Returns the fully populated demo TV shop profile.
     """
-    return _make_demo_profile()
+    return _make_demo_profile() 
+
+
+def build_profile_from_transcript(transcript: str) -> RetailerProfile:
+    """
+    Build a structured RetailerProfile from a chat transcript string.
+    This is used by API intake routes where chat is collected in a UI.
+    """
+    extract_chain = make_json_chain(
+        EXTRACT_SYSTEM,
+        "Conversation transcript:\n\n{transcript}\n\nExtract the retailer profile JSON."
+    )
+
+    try:
+        profile_data = extract_chain.invoke({"transcript": transcript})
+    except Exception:
+        profile_data = _fallback_profile_dict()
+
+    if not profile_data.get("catalog"):
+        profile_data["catalog"] = DEMO_CATALOG
+
+    profile = RetailerProfile(**{
+        k: v for k, v in profile_data.items()
+        if k in RetailerProfile.model_fields
+    })
+    profile.onboarding_complete = True
+
+    if not profile.known_competitors or len(profile.known_competitors) < 2:
+        profile.known_competitors = get_competitors_for_category(profile.category)
+
+    return profile
+
+
+def build_profile_from_chat_messages(messages: list[dict]) -> RetailerProfile:
+    """
+    Build a RetailerProfile from structured chat turns.
+    Expected message format: {"role": "user|assistant", "content": "..."}
+    """
+    lines = []
+    for m in messages:
+        role = str(m.get("role", "user")).lower()
+        speaker = "Retailer" if role in ("user", "retailer", "human") else "Agent"
+        lines.append(f"{speaker}: {m.get('content', '')}")
+
+    transcript = "\n".join(lines)
+    return build_profile_from_transcript(transcript)

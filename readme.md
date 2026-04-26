@@ -81,9 +81,35 @@ When an agent reports `0 records found`, use this guide to diagnose:
 
 ## 🗺️ Roadmap
 - [x] **v1.0 Stable**: Autonomous scraping and intelligence pipeline.
-- [ ] **v1.1 API Layer**: FastAPI wrapper for LangGraph cycle management.
-- [ ] **v1.2 Scale**: Transition from SQLite to **MongoDB** for schemaless, high-volume JSON storage.
+- [x] **v1.1 API Layer**: FastAPI wrapper for LangGraph cycle management.
+- [ ] **v1.2 Scale**: Optimize **MongoDB** indexing, retention, and high-volume analytics queries.
 - [ ] **v1.3 Dashboard**: Next.js + Shadcn UI Command Center.
+
+## FastAPI Backend
+
+Run the backend API:
+
+```bash
+python run_api.py
+```
+
+Open interactive docs:
+
+- `http://localhost:8000/docs`
+
+Main endpoints:
+
+- `GET /health/live`
+- `GET /health/ready`
+- `POST /api/v1/intake/form/run`
+- `POST /api/v1/intake/chat/run`
+- `POST /api/v1/cycles/run`
+- `GET /api/v1/cycles/retailers/{retailer_id}`
+- `GET /api/v1/retailers`
+- `POST /api/v1/retailers`
+- `GET /api/v1/recommendations/retailers/{retailer_id}`
+- `POST /api/v1/recommendations/retailers/{retailer_id}/cycles/{cycle_id}/approvals`
+- `GET /api/v1/intelligence/retailers/{retailer_id}`
 
 ---
 *Built for the next generation of Retail Intelligence.*
