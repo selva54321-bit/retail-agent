@@ -513,6 +513,14 @@ def get_all_recommendations(retailer_id: int, limit: int = 50) -> list:
     return list(cur)
 
 
+def get_recommendations_for_cycle(retailer_id: int, cycle_id: str) -> list:
+    cur = _col("recommendations").find(
+        {"retailer_id": retailer_id, "cycle_id": cycle_id},
+        {"_id": 0},
+    ).sort("created_at", DESCENDING)
+    return list(cur)
+
+
 # --- CYCLE LOG ---------------------------------------------------------------
 
 def save_cycle_log(retailer_id: int, cycle: dict):
@@ -537,6 +545,44 @@ def get_recent_cycles(retailer_id: int, limit: int = 10) -> list:
         {"retailer_id": retailer_id},
         {"_id": 0},
     ).sort("started_at", DESCENDING).limit(limit)
+    return list(cur)
+
+
+def get_cycle_log(retailer_id: int, cycle_id: str) -> dict | None:
+    return _col("cycle_log").find_one(
+        {"retailer_id": retailer_id, "cycle_id": cycle_id},
+        {"_id": 0},
+    )
+
+
+def get_analytics_for_cycle(retailer_id: int, cycle_id: str) -> list:
+    cur = _col("analytics_results").find(
+        {"retailer_id": retailer_id, "cycle_id": cycle_id},
+        {"_id": 0},
+    ).sort("price_rank", ASCENDING)
+    return list(cur)
+
+
+def get_market_intelligence_for_cycle(retailer_id: int, cycle_id: str) -> list:
+    cur = _col("market_intelligence").find(
+        {"retailer_id": retailer_id, "cycle_id": cycle_id},
+        {"_id": 0},
+    ).sort("strategy_label", ASCENDING)
+    return list(cur)
+
+
+def get_price_drop_patterns_for_cycle(retailer_id: int, cycle_id: str | None = None) -> list:
+    flt = {"retailer_id": retailer_id}
+    cur = _col("price_drop_patterns").find(flt, {"_id": 0}).sort("consistency_score", DESCENDING)
+    return list(cur)
+
+
+def get_competitor_catalog_for_cycle(retailer_id: int, cycle_id: str | None = None) -> list:
+    # competitor catalog is current-state data; cycle_id is accepted for API symmetry.
+    cur = _col("competitor_catalog").find(
+        {"retailer_id": retailer_id},
+        {"_id": 0},
+    ).sort("last_seen_at", DESCENDING)
     return list(cur)
 
 

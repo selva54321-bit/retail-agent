@@ -105,6 +105,8 @@ Main endpoints:
 - `POST /api/v1/intake/chat/run`
 - `POST /api/v1/cycles/run`
 - `GET /api/v1/cycles/retailers/{retailer_id}`
+- `GET /api/v1/dashboard/retailers/{retailer_id}/latest`
+- `GET /api/v1/dashboard/retailers/{retailer_id}/cycles/{cycle_id}`
 - `GET /api/v1/retailers`
 - `POST /api/v1/retailers`
 - `GET /api/v1/recommendations/retailers/{retailer_id}`
