@@ -1,4 +1,23 @@
-from __future__ import annotations
+{
+  "profile": {
+    "store_name": "The TV Shop Coimbatore",
+    "category": "televisions",
+    "subcategories": ["LED TV", "OLED TV"],
+    "location": "Coimbatore, Tamil Nadu",
+    "brand_positioning": "specialist_retailer",
+    "known_competitors": ["Amazon India", "Flipkart"],
+    "pricing_strategy": "competitive_parity",
+    "cost_margin_floor": 0.12,
+    "max_price_shift_pct": 0.15,
+    "auto_apply_prices": false,
+    "alert_threshold_pct": 0.05,
+    "scan_frequency": "daily",
+    "catalog": [
+      { "name": "LG 81.28 cm 32 inch Full HD LED Smart WebOS TV", "sku": "32LQ570BPSA", "current_price": 17912, "cost": 14375 }
+    ],
+    "onboarding_complete": true
+  }
+}from __future__ import annotations
 
 import argparse
 import os
