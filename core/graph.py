@@ -289,6 +289,12 @@ def run_cycle(retailer_id: int,
         Final AgentState after the cycle completes
     """
     db.init_db()
+
+    # If a complete profile is provided for a new retailer, persist first so
+    # all writes in this cycle use the real retailer_id instead of 0.
+    if retailer_id == 0 and profile is not None and profile.onboarding_complete:
+        retailer_id = db.save_retailer_profile(profile.model_dump())
+
     checkpointer = MemorySaver()
     compiled     = build_graph(checkpointer=checkpointer)
 
@@ -317,7 +323,16 @@ def run_cycle(retailer_id: int,
             if final_state is None:
                 final_state = dict(initial_state)
             final_state.update(chunk.get(node_name, {}))
-        return final_state or initial_state
+        state_out = final_state or initial_state
+
+        # Persist profile for first-time onboarding flows.
+        if state_out["retailer_profile"].onboarding_complete:
+            rid = db.save_retailer_profile(state_out["retailer_profile"].model_dump())
+            if retailer_id == 0:
+                retailer_id = rid
+
+        state_out["retailer_id"] = retailer_id
+        return state_out
     else:
         # Invoke mode: run to completion
         final_state = compiled.invoke(initial_state, config=config)
@@ -327,5 +342,7 @@ def run_cycle(retailer_id: int,
             rid = db.save_retailer_profile(final_state["retailer_profile"].model_dump())
             if retailer_id == 0:
                 retailer_id = rid
+
+        final_state["retailer_id"] = retailer_id
 
         return final_state

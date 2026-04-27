@@ -39,8 +39,11 @@ def run_agent_cycle_with_profile(
         )
 
     final = run_cycle(retailer_id=retailer_id, profile=profile, stream=stream)
-    resolved_retailer_id = _resolve_retailer_id_after_cycle(retailer_id)
     final_state = to_plain(final)
+    resolved_retailer_id = int(
+        final_state.get("retailer_id")
+        or _resolve_retailer_id_after_cycle(retailer_id)
+    )
 
     return {
         "retailer_id": resolved_retailer_id,
