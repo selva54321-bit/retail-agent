@@ -6,6 +6,7 @@ import { CyclesPage } from './pages/CyclesPage';
 import { HealthPage } from './pages/HealthPage';
 import { IntakePage } from './pages/IntakePage';
 import { IntelligencePage } from './pages/IntelligencePage';
+import { CompetitorsPage } from './pages/CompetitorsPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { RecommendationsPage } from './pages/RecommendationsPage';
 import { RetailersPage } from './pages/RetailersPage';
@@ -41,6 +42,9 @@ function App() {
   switch (activeView) {
     case 'intake':
       page = <IntakePage api={api} retailerId={retailerId} onCycleCreated={handleCycleCreated} />;
+      break;
+    case 'competitors':
+      page = <CompetitorsPage api={api} retailerId={retailerId} />;
       break;
     case 'cycles':
       page = (

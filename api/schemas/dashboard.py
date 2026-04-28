@@ -18,5 +18,7 @@ class DashboardReportResponse(BaseModel):
     market_intelligence: list[dict] = Field(default_factory=list)
     drop_patterns: list[dict] = Field(default_factory=list)
     competitor_catalog: list[dict] = Field(default_factory=list)
+    catalog_alerts: list[dict] = Field(default_factory=list)
+    fast_movers: list[dict] = Field(default_factory=list)
     alerts: list[DashboardAlert] = Field(default_factory=list)
     briefing: str = ""

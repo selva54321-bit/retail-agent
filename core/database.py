@@ -535,6 +535,8 @@ def save_cycle_log(retailer_id: int, cycle: dict):
             "matches_found": cycle.get("matches_found", 0),
             "recommendations_made": cycle.get("recommendations_made", 0),
             "briefing": cycle.get("briefing", ""),
+            "catalog_alerts": cycle.get("catalog_alerts", []),
+            "fast_movers": cycle.get("fast_movers", []),
             "errors_json": cycle.get("errors", []),
         }
     )

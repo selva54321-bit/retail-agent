@@ -141,6 +141,8 @@ def cycle_log_node(state: AgentState) -> dict:
         "matches_found":        len(state["product_matches"]),
         "recommendations_made": len(state["recommendations"]),
         "briefing":             state["morning_briefing"],
+        "catalog_alerts":       state.get("catalog_alerts", []),
+        "fast_movers":          state.get("intel_insights", {}).get("fast_movers", []),
         "errors":               state["errors"],
     })
     print(f"\n[Cycle Log] Cycle {state['cycle_id']} complete.")

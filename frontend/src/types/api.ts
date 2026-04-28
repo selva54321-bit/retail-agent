@@ -119,6 +119,8 @@ export interface DashboardReportResponse {
   market_intelligence: Array<Record<string, unknown>>;
   drop_patterns: Array<Record<string, unknown>>;
   competitor_catalog: Array<Record<string, unknown>>;
+  catalog_alerts: Array<Record<string, unknown>>;
+  fast_movers: Array<Record<string, unknown>>;
   alerts: DashboardAlert[];
   briefing: string;
 }

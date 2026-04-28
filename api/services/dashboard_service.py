@@ -44,6 +44,22 @@ def _derive_alerts(analytics: list[dict], recommendations: list[dict]) -> list[d
     return alerts
 
 
+def _catalog_spy_alerts(cycle_log: dict) -> list[dict]:
+    alerts: list[dict] = []
+    for item in cycle_log.get("catalog_alerts", []) or []:
+        alerts.append(
+            {
+                "severity": item.get("severity", "medium"),
+                "message": item.get("message", ""),
+                "source": "catalog_spy",
+                "type": item.get("type", "catalog_spy"),
+                "data": item.get("data", {}),
+            }
+        )
+
+    return alerts
+
+
 def get_cycle_dashboard(retailer_id: int, cycle_id: str) -> dict:
     cycle_log = db.get_cycle_log(retailer_id, cycle_id)
     if not cycle_log:
@@ -55,6 +71,7 @@ def get_cycle_dashboard(retailer_id: int, cycle_id: str) -> dict:
     drop_patterns = db.get_price_drop_patterns_for_cycle(retailer_id)
     competitor_catalog = db.get_competitor_catalog_for_cycle(retailer_id, cycle_id)
     alerts = _derive_alerts(analytics, recommendations)
+    catalog_spy_alerts = _catalog_spy_alerts(cycle_log)
 
     return {
         "retailer_id": retailer_id,
@@ -65,7 +82,9 @@ def get_cycle_dashboard(retailer_id: int, cycle_id: str) -> dict:
         "market_intelligence": market_intelligence,
         "drop_patterns": drop_patterns,
         "competitor_catalog": competitor_catalog,
-        "alerts": alerts,
+        "catalog_alerts": catalog_spy_alerts,
+        "fast_movers": cycle_log.get("fast_movers", []),
+        "alerts": alerts + catalog_spy_alerts,
         "briefing": cycle_log.get("briefing", ""),
     }
 

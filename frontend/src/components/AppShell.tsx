@@ -3,6 +3,7 @@ import type { PropsWithChildren } from 'react';
 export type ViewKey =
   | 'overview'
   | 'intake'
+  | 'competitors'
   | 'cycles'
   | 'recommendations'
   | 'intelligence'
@@ -24,6 +25,7 @@ interface AppShellProps extends PropsWithChildren {
 const NAV_ITEMS: Array<{ key: ViewKey; label: string; desc: string }> = [
   { key: 'overview', label: 'Overview', desc: 'Cycle dashboard and charts' },
   { key: 'intake', label: 'Intake + Run', desc: 'Form and chat onboarding' },
+  { key: 'competitors', label: 'Competitors', desc: 'Track known and scouted competitors' },
   { key: 'cycles', label: 'Cycles', desc: 'Run and inspect cycle history' },
   { key: 'recommendations', label: 'Recommendations', desc: 'Approve and track pricing' },
   { key: 'intelligence', label: 'Intelligence', desc: 'Competitor behavior and demand' },

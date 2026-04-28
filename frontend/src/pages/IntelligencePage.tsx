@@ -16,6 +16,7 @@ import { KpiCard } from '../components/KpiCard';
 import { Panel } from '../components/Panel';
 import { ApiClient } from '../lib/api';
 import { asCurrency, asPercent, safeArray } from '../lib/format';
+import type { DashboardReportResponse } from '../types/api';
 
 interface IntelligencePageProps {
   api: ApiClient;
@@ -28,6 +29,7 @@ const COLORS = ['#111827', '#374151', '#6b7280', '#9ca3af'];
 export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [dashboardReport, setDashboardReport] = useState<DashboardReportResponse | null>(null);
 
   const [marketItems, setMarketItems] = useState<Array<Record<string, unknown>>>([]);
   const [dropPatterns, setDropPatterns] = useState<Array<Record<string, unknown>>>([]);
@@ -40,6 +42,7 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
       setDropPatterns([]);
       setCatalogItems([]);
       setForecasts([]);
+      setDashboardReport(null);
       return;
     }
 
@@ -55,12 +58,14 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
           api.getCompetitorCatalog(retailerId),
           api.getDemandForecasts(retailerId, 100),
         ]);
+        const dashboard = await api.getDashboardLatest(retailerId);
 
         if (cancelled) return;
         setMarketItems(safeArray<Record<string, unknown>>(market.items));
         setDropPatterns(safeArray<Record<string, unknown>>(drop.patterns));
         setCatalogItems(safeArray<Record<string, unknown>>(catalog.items));
         setForecasts(safeArray<Record<string, unknown>>(demand.forecasts));
+        setDashboardReport(dashboard);
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'Failed to load intelligence data');
@@ -109,6 +114,16 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
       .slice(0, 10);
   }, [catalogItems]);
 
+  const catalogSpyAlerts = useMemo(
+    () => safeArray<Record<string, unknown>>(dashboardReport?.catalog_alerts),
+    [dashboardReport],
+  );
+
+  const fastMovers = useMemo(
+    () => safeArray<Record<string, unknown>>(dashboardReport?.fast_movers),
+    [dashboardReport],
+  );
+
   return (
     <div className="page-grid">
       <Panel title="Intelligence Snapshot" subtitle="Aggregated competitor and demand signals">
@@ -119,6 +134,27 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
           <KpiCard label="Drop Patterns" value={dropPatterns.length} />
           <KpiCard label="Competitor Catalog Rows" value={catalogItems.length} />
           <KpiCard label="Demand Forecast Rows" value={forecasts.length} />
+        </div>
+      </Panel>
+
+      <Panel title="CatalogSpy" subtitle="Stock availability, new arrivals, discontinued, and fast movers">
+        <div className="kpi-grid">
+          <KpiCard label="New Arrivals" value={catalogSpyAlerts.filter((item) => String(item.type || '') === 'new_arrival').length} />
+          <KpiCard label="Stock-Outs" value={catalogSpyAlerts.filter((item) => String(item.type || '') === 'stock_out').length} />
+          <KpiCard label="Possibly Discontinued" value={catalogSpyAlerts.filter((item) => String(item.type || '') === 'discontinued').length} />
+          <KpiCard label="Fast Movers" value={fastMovers.length} />
+        </div>
+
+        <div className="list-wrap mt-6">
+          {catalogSpyAlerts.length === 0 ? <p>No CatalogSpy alerts captured for the latest cycle.</p> : null}
+          {catalogSpyAlerts.map((alert, idx) => (
+            <article key={`${String(alert.message || 'catalog')}-${idx}`} className="list-item">
+              <span className={`badge ${String(alert.severity || 'medium').toLowerCase()}`}>
+                {String(alert.type || 'catalog_spy')}
+              </span>
+              <p>{String(alert.message || '')}</p>
+            </article>
+          ))}
         </div>
       </Panel>
 
