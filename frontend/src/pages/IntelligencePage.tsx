@@ -134,6 +134,17 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
     [dashboardReport, liveCatalogSpy],
   );
 
+  const fastMoverText = (fm: Record<string, unknown>) => {
+    const product = String(fm.message || fm.product || fm.product_name || fm.name || fm.retailer_sku || 'Unknown product');
+    const competitor = fm.competitor || fm.competitor_name ? ` at ${String(fm.competitor || fm.competitor_name)}` : '';
+    const stockoutRate = fm.stockout_rate !== undefined ? ` - ${asPercent(Number(fm.stockout_rate) * 100, 0)} stock-out rate` : '';
+    const timesOut = fm.times_out !== undefined ? ` (${Number(fm.times_out)} stock-outs)` : '';
+
+    const velocity = fm.velocity !== undefined ? ` - velocity: ${String(fm.velocity)}` : '';
+
+    return `${product}${competitor}${stockoutRate}${timesOut}${velocity}`;
+  };
+
   return (
     <div className="page-grid">
       <Panel title="Intelligence Snapshot" subtitle="Aggregated competitor and demand signals">
@@ -163,6 +174,15 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
                 {String(alert.type || 'catalog_spy')}
               </span>
               <p>{String(alert.message || '')}</p>
+            </article>
+          ))}
+        </div>
+        <div className="list-wrap mt-4">
+          {fastMovers.length === 0 ? null : <h4 className="mb-3">Fast Movers</h4>}
+          {fastMovers.map((fm, idx) => (
+            <article key={`${String(fm.retailer_sku || fm.product || fm.product_name || idx)}-${idx}`} className="list-item">
+              <span className={`badge small ${String(fm.severity || 'low').toLowerCase()}`}>fast_mover</span>
+              <p>{fastMoverText(fm)}</p>
             </article>
           ))}
         </div>
