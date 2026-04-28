@@ -70,56 +70,38 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
   const [dropPatterns, setDropPatterns] = useState<Array<Record<string, unknown>>>([]);
   const [catalogItems, setCatalogItems] = useState<Array<Record<string, unknown>>>([]);
   const [forecasts, setForecasts] = useState<Array<Record<string, unknown>>>([]);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // Centralized load function for manual refresh and initial load
+  async function loadAllData() {
+    if (retailerId <= 0) return;
+    setLoading(true);
+    setError('');
+    try {
+      const [market, drop, catalog, demand] = await Promise.all([
+        api.getMarketIntelligence(retailerId, 20),
+        api.getDropPatterns(retailerId),
+        api.getCompetitorCatalog(retailerId),
+        api.getDemandForecasts(retailerId, 100),
+      ]);
+      const dashboard = await api.getDashboardLatest(retailerId);
+      const catalogSpy = await api.getCatalogSpySnapshot(retailerId);
+
+      setMarketItems(safeArray<Record<string, unknown>>(market.items));
+      setDropPatterns(safeArray<Record<string, unknown>>(drop.patterns));
+      setCatalogItems(safeArray<Record<string, unknown>>(catalog.items));
+      setForecasts(safeArray<Record<string, unknown>>(demand.forecasts));
+      setDashboardReport(dashboard);
+      setLiveCatalogSpy(catalogSpy);
+      setLastUpdated(new Date());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load intelligence data');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    if (retailerId <= 0) {
-      setMarketItems([]);
-      setDropPatterns([]);
-      setCatalogItems([]);
-      setForecasts([]);
-      setDashboardReport(null);
-      setLiveCatalogSpy(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError('');
-      try {
-        const [market, drop, catalog, demand] = await Promise.all([
-          api.getMarketIntelligence(retailerId, 20),
-          api.getDropPatterns(retailerId),
-          api.getCompetitorCatalog(retailerId),
-          api.getDemandForecasts(retailerId, 100),
-        ]);
-        const dashboard = await api.getDashboardLatest(retailerId);
-        const catalogSpy = await api.getCatalogSpySnapshot(retailerId);
-
-        if (cancelled) return;
-        setMarketItems(safeArray<Record<string, unknown>>(market.items));
-        setDropPatterns(safeArray<Record<string, unknown>>(drop.patterns));
-        setCatalogItems(safeArray<Record<string, unknown>>(catalog.items));
-        setForecasts(safeArray<Record<string, unknown>>(demand.forecasts));
-        setDashboardReport(dashboard);
-        setLiveCatalogSpy(catalogSpy);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : 'Failed to load intelligence data');
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
+    void loadAllData();
   }, [api, retailerId, refreshKey]);
 
   const strategyMix = useMemo(() => {
@@ -179,22 +161,19 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
     [dashboardReport, liveCatalogSpy],
   );
 
-  const fastMoverText = (fm: Record<string, unknown>) => {
-    const product = String(fm.message || fm.product || fm.product_name || fm.name || fm.retailer_sku || 'Unknown product');
-    const competitor = fm.competitor || fm.competitor_name ? ` at ${String(fm.competitor || fm.competitor_name)}` : '';
-    const stockoutRate = fm.stockout_rate !== undefined ? ` - ${asPercent(Number(fm.stockout_rate) * 100, 0)} stock-out rate` : '';
-    const timesOut = fm.times_out !== undefined ? ` (${Number(fm.times_out)} stock-outs)` : '';
-
-    const velocity = fm.velocity !== undefined ? ` - velocity: ${String(fm.velocity)}` : '';
-
-    return `${product}${competitor}${stockoutRate}${timesOut}${velocity}`;
-  };
-
   return (
     <div className="page-grid">
       <Panel title="Intelligence Snapshot" subtitle="Aggregated competitor and demand signals">
-        {loading ? <p>Loading intelligence...</p> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+        <div className="flex items-start justify-between">
+          <div>
+            {loading ? <p>Loading intelligence...</p> : null}
+            {error ? <p className="error-text">{error}</p> : null}
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => void loadAllData()} className="px-3 py-1 bg-secondary rounded-md text-sm">Refresh</button>
+            <div className="text-xs text-muted-foreground">{lastUpdated ? `Updated ${lastUpdated.toLocaleString()}` : '—'}</div>
+          </div>
+        </div>
         <div className="kpi-grid">
           <KpiCard label="Market Intelligence Rows" value={marketItems.length} />
           <KpiCard label="Drop Patterns" value={dropPatterns.length} />
@@ -211,25 +190,55 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
           <KpiCard label="Fast Movers" value={fastMovers.length} />
         </div>
 
-        <div className="list-wrap mt-6">
-          {catalogSpyAlerts.length === 0 ? <p>No CatalogSpy alerts captured for the latest cycle.</p> : null}
-          {catalogSpyAlerts.map((alert, idx) => (
-            <article key={`${String(alert.message || 'catalog')}-${idx}`} className="list-item">
-              <span className={`badge ${String(alert.severity || 'medium').toLowerCase()}`}>
-                {String(alert.type || 'catalog_spy')}
-              </span>
-              <p>{String(alert.message || '')}</p>
-            </article>
-          ))}
-        </div>
-        <div className="list-wrap mt-4">
-          {fastMovers.length === 0 ? null : <h4 className="mb-3">Fast Movers</h4>}
-          {fastMovers.map((fm, idx) => (
-            <article key={`${String(fm.retailer_sku || fm.product || fm.product_name || idx)}-${idx}`} className="list-item">
-              <span className={`badge small ${String(fm.severity || 'low').toLowerCase()}`}>fast_mover</span>
-              <p>{fastMoverText(fm)}</p>
-            </article>
-          ))}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+          <div className="list-wrap">
+            {catalogSpyAlerts.length === 0 ? <p>No CatalogSpy alerts captured for the latest cycle.</p> : null}
+            {catalogSpyAlerts.map((alert, idx) => (
+              <article key={`${String(alert.message || 'catalog')}-${idx}`} className="list-item">
+                <span className={`badge ${String(alert.severity || 'medium').toLowerCase()}`}>
+                  {String(alert.type || 'catalog_spy')}
+                </span>
+                <p>{String(alert.message || '')}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="bg-card rounded-2xl p-4 border border-border">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-lg font-semibold">Fast Movers</h4>
+              <div className="text-sm text-muted-foreground">{fastMovers.length} items</div>
+            </div>
+            {fastMovers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No fast movers detected.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[600px]">
+                  <thead>
+                    <tr className="border-b border-border text-muted-foreground">
+                      <th className="pb-2 font-semibold">Product</th>
+                      <th className="pb-2 font-semibold">SKU</th>
+                      <th className="pb-2 font-semibold">Velocity</th>
+                      <th className="pb-2 font-semibold">Seen</th>
+                      <th className="pb-2 font-semibold">Last Seen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fastMovers.map((fm: any, idx: number) => (
+                      <tr key={`${fm.retailer_sku || idx}-${idx}`} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
+                        <td className="py-2 pr-4">
+                          <div className="font-medium text-sm line-clamp-2">{String(fm.product_name || fm.name || fm.message || '-')}</div>
+                        </td>
+                        <td className="py-2">{String(fm.retailer_sku || fm.sku || '-')}</td>
+                        <td className="py-2">{fm.velocity !== undefined ? String(fm.velocity) : '-'}</td>
+                        <td className="py-2">{Number(fm.times_seen || fm.times || 0)}</td>
+                        <td className="py-2 text-sm text-muted-foreground">{fm.last_seen ? new Date(fm.last_seen).toLocaleDateString() : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </Panel>
 
