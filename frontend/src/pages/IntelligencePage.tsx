@@ -16,7 +16,7 @@ import { KpiCard } from '../components/KpiCard';
 import { Panel } from '../components/Panel';
 import { ApiClient } from '../lib/api';
 import { asCurrency, asPercent, safeArray } from '../lib/format';
-import type { DashboardReportResponse } from '../types/api';
+import type { CatalogSpySnapshotResponse, DashboardReportResponse } from '../types/api';
 
 interface IntelligencePageProps {
   api: ApiClient;
@@ -30,6 +30,7 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [dashboardReport, setDashboardReport] = useState<DashboardReportResponse | null>(null);
+  const [liveCatalogSpy, setLiveCatalogSpy] = useState<CatalogSpySnapshotResponse | null>(null);
 
   const [marketItems, setMarketItems] = useState<Array<Record<string, unknown>>>([]);
   const [dropPatterns, setDropPatterns] = useState<Array<Record<string, unknown>>>([]);
@@ -43,6 +44,7 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
       setCatalogItems([]);
       setForecasts([]);
       setDashboardReport(null);
+      setLiveCatalogSpy(null);
       return;
     }
 
@@ -59,6 +61,7 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
           api.getDemandForecasts(retailerId, 100),
         ]);
         const dashboard = await api.getDashboardLatest(retailerId);
+        const catalogSpy = await api.getCatalogSpySnapshot(retailerId);
 
         if (cancelled) return;
         setMarketItems(safeArray<Record<string, unknown>>(market.items));
@@ -66,6 +69,7 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
         setCatalogItems(safeArray<Record<string, unknown>>(catalog.items));
         setForecasts(safeArray<Record<string, unknown>>(demand.forecasts));
         setDashboardReport(dashboard);
+        setLiveCatalogSpy(catalogSpy);
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'Failed to load intelligence data');
@@ -115,13 +119,19 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
   }, [catalogItems]);
 
   const catalogSpyAlerts = useMemo(
-    () => safeArray<Record<string, unknown>>(dashboardReport?.catalog_alerts),
-    [dashboardReport],
+    () => {
+      const dashboardAlerts = safeArray<Record<string, unknown>>(dashboardReport?.catalog_alerts);
+      return dashboardAlerts.length > 0 ? dashboardAlerts : safeArray<Record<string, unknown>>(liveCatalogSpy?.catalog_alerts);
+    },
+    [dashboardReport, liveCatalogSpy],
   );
 
   const fastMovers = useMemo(
-    () => safeArray<Record<string, unknown>>(dashboardReport?.fast_movers),
-    [dashboardReport],
+    () => {
+      const dashboardFastMovers = safeArray<Record<string, unknown>>(dashboardReport?.fast_movers);
+      return dashboardFastMovers.length > 0 ? dashboardFastMovers : safeArray<Record<string, unknown>>(liveCatalogSpy?.fast_movers);
+    },
+    [dashboardReport, liveCatalogSpy],
   );
 
   return (

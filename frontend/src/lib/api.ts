@@ -1,5 +1,6 @@
 import type {
   CompetitorCatalogResponse,
+  CatalogSpySnapshotResponse,
   CycleLogResponse,
   DashboardReportResponse,
   DemandForecastResponse,
@@ -141,6 +142,12 @@ export class ApiClient {
   getDemandForecasts(retailerId: number, limit = 50): Promise<DemandForecastResponse> {
     return this.request<DemandForecastResponse>(
       `${this.apiPrefix}/intelligence/retailers/${retailerId}/demand-forecasts?limit=${limit}`,
+    );
+  }
+
+  getCatalogSpySnapshot(retailerId: number): Promise<CatalogSpySnapshotResponse> {
+    return this.request<CatalogSpySnapshotResponse>(
+      `${this.apiPrefix}/intelligence/retailers/${retailerId}/catalog-spy`,
     );
   }
 }

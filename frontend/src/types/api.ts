@@ -104,6 +104,15 @@ export interface DemandForecastResponse {
   forecasts: Array<Record<string, unknown>>;
 }
 
+export interface CatalogSpySnapshotResponse {
+  retailer_id: number;
+  catalog_alerts: Array<Record<string, unknown>>;
+  new_arrivals: Array<Record<string, unknown>>;
+  stock_outs: Array<Record<string, unknown>>;
+  discontinued: Array<Record<string, unknown>>;
+  fast_movers: Array<Record<string, unknown>>;
+}
+
 export interface DashboardAlert {
   severity: string;
   message: string;
