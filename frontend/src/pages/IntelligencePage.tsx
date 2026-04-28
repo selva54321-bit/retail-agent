@@ -15,7 +15,7 @@ import {
 import { KpiCard } from '../components/KpiCard';
 import { Panel } from '../components/Panel';
 import { ApiClient } from '../lib/api';
-import { asCurrency, asPercent, safeArray } from '../lib/format';
+import { asPercent, safeArray } from '../lib/format';
 import type { CatalogSpySnapshotResponse, DashboardReportResponse } from '../types/api';
 
 interface IntelligencePageProps {
@@ -25,6 +25,40 @@ interface IntelligencePageProps {
 }
 
 const COLORS = ['#111827', '#374151', '#6b7280', '#9ca3af'];
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+function parseInsightPayload(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Record<string, unknown>;
+  try {
+    return JSON.parse(String(value).replace(/'/g, '"')) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function strategyInsight(row: Record<string, unknown>): string {
+  const insights = parseInsightPayload(row.insights_json || row.insights);
+  const patterns = safeArray<string>(insights.price_patterns);
+  if (patterns[0]) return patterns[0];
+  if (insights.price_pattern) return String(insights.price_pattern);
+
+  const flashSale = parseInsightPayload(insights.latest_flash_sale);
+  if (flashSale.product) {
+    const drop = flashSale.drop_pct !== undefined ? ` dropped ${flashSale.drop_pct}%` : ' flash-sale signal';
+    return `${String(flashSale.product).slice(0, 54)}${drop}`;
+  }
+
+  if (insights.focus_product) return String(insights.focus_product);
+  if (insights.note) return String(insights.note);
+  return '-';
+}
+
+function dayName(value: unknown): string {
+  const index = Number(value);
+  if (!Number.isInteger(index) || index < 0 || index >= DAY_NAMES.length) return '-';
+  return DAY_NAMES[index];
+}
 
 export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePageProps) {
   const [loading, setLoading] = useState(false);
@@ -117,6 +151,17 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
       .sort((a, b) => b.value - a.value)
       .slice(0, 10);
   }, [catalogItems]);
+
+  const marketStrategyRows = useMemo(() => {
+    const latestByCompetitor = new Map<string, Record<string, unknown>>();
+    for (const item of marketItems) {
+      const competitor = String(item.competitor_name || item.competitor || 'unknown');
+      if (!latestByCompetitor.has(competitor)) {
+        latestByCompetitor.set(competitor, item);
+      }
+    }
+    return Array.from(latestByCompetitor.values());
+  }, [marketItems]);
 
   const catalogSpyAlerts = useMemo(
     () => {
@@ -231,26 +276,34 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
         </div>
       </Panel>
 
-      <Panel title="Drop Pattern Feed" subtitle="Top products with repeated competitor price drops">
+      <Panel title="Drop Pattern Feed" subtitle="Repeated competitor price-drop patterns from the Intel agent">
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
+                <th>Competitor</th>
                 <th>Product</th>
                 <th>SKU</th>
-                <th>Drop %</th>
-                <th>Streak</th>
-                <th>Confidence</th>
+                <th>Pattern Day</th>
+                <th>Avg Drop</th>
+                <th>Max Drop</th>
+                <th>Drops</th>
+                <th>Consistency</th>
+                <th>Next Drop</th>
               </tr>
             </thead>
             <tbody>
               {dropPatterns.slice(0, 25).map((row, idx) => (
-                <tr key={`${String(row.retailer_sku || idx)}-${idx}`}>
+                <tr key={`${String(row.competitor_name || 'pattern')}-${String(row.catalog_sku || row.product_name || idx)}-${idx}`}>
+                  <td>{String(row.competitor_name || row.competitor || '-')}</td>
                   <td>{String(row.product_name || row.name || '-')}</td>
-                  <td>{String(row.retailer_sku || row.sku || '-')}</td>
-                  <td>{asPercent(Number(row.drop_pct || row.drop_percent || 0) * 100)}</td>
-                  <td>{Number(row.streak_count || row.streak || 0)}</td>
-                  <td>{asPercent(Number(row.confidence || 0) * 100, 0)}</td>
+                  <td>{String(row.catalog_sku || row.retailer_sku || row.sku || '-')}</td>
+                  <td>{dayName(row.peak_day_of_week)}</td>
+                  <td>{asPercent(Number(row.avg_drop_pct || 0))}</td>
+                  <td>{asPercent(Number(row.max_drop_pct || 0))}</td>
+                  <td>{Number(row.drop_count || 0)}</td>
+                  <td>{asPercent(Number(row.consistency_score || 0) * 100, 0)}</td>
+                  <td>{String(row.next_predicted_date || '-')}</td>
                 </tr>
               ))}
             </tbody>
@@ -259,35 +312,28 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
         </div>
       </Panel>
 
-      <Panel title="Market Intel Feed" subtitle="Sample records for quick analyst verification">
+      <Panel title="Market Intel Feed" subtitle="Competitor-level strategy signals from the Intel agent">
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Competitor</th>
-                <th>Product</th>
-                <th>Competitor Price</th>
-                <th>Retailer Price</th>
-                <th>Gap</th>
+                <th>Brand</th>
                 <th>Strategy</th>
+                <th>Avg Gap</th>
+                <th>Key Insight</th>
               </tr>
             </thead>
             <tbody>
-              {marketItems.slice(0, 30).map((row, idx) => {
-                const competitorPrice = Number(row.competitor_price || row.market_price || 0);
-                const retailerPrice = Number(row.retailer_price || row.current_price || 0);
-                const gap = retailerPrice > 0 ? ((retailerPrice - competitorPrice) / retailerPrice) * 100 : 0;
-                return (
-                  <tr key={`${String(row.product_name || idx)}-${idx}`}>
-                    <td>{String(row.competitor_name || row.competitor || '-')}</td>
-                    <td>{String(row.product_name || row.name || '-')}</td>
-                    <td>{asCurrency(competitorPrice)}</td>
-                    <td>{asCurrency(retailerPrice)}</td>
-                    <td>{asPercent(gap)}</td>
-                    <td>{String(row.strategy_label || row.strategy || '-')}</td>
-                  </tr>
-                );
-              })}
+              {marketStrategyRows.slice(0, 30).map((row, idx) => (
+                <tr key={`${String(row.competitor_name || row.competitor || idx)}-${idx}`}>
+                  <td>{String(row.competitor_name || row.competitor || '-')}</td>
+                  <td>
+                    <span className="badge neutral">{String(row.strategy_label || row.strategy || 'unknown')}</span>
+                  </td>
+                  <td>{asPercent(Number(row.avg_price_gap_pct || 0))}</td>
+                  <td>{strategyInsight(row)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
           {marketItems.length === 0 ? <p>No market intelligence rows found.</p> : null}
