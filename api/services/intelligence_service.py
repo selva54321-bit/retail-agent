@@ -69,10 +69,13 @@ def get_catalog_spy_snapshot(retailer_id: int) -> dict:
     frequent_oos = db.get_frequent_stockouts(retailer_id, min_stockouts=2)
     fast_movers = [
         {
-            "product": row.get("product_name", ""),
-            "competitor": row.get("competitor_name", ""),
-            "stockout_rate": round(float(row.get("stockout_rate", 0) or 0), 2),
+            "product_name": row.get("product_name", ""),
+            "competitor_name": row.get("competitor_name", ""),
+            "sku": row.get("catalog_sku", ""),
+            "velocity": f"{round(float(row.get('stockout_rate', 0) or 0) * 100, 1)}%",
+            "times_seen": row.get("times_seen", 0),
             "times_out": row.get("times_out_of_stock", 0),
+            "last_seen": row.get("last_seen_at", ""),
         }
         for row in frequent_oos[:10]
     ]

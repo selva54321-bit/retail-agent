@@ -182,7 +182,11 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
         </div>
       </Panel>
 
-      <Panel title="CatalogSpy" subtitle="Stock availability, new arrivals, discontinued, and fast movers">
+      <Panel
+        className="catalog-spy-panel"
+        title="CatalogSpy"
+        subtitle="Stock availability, new arrivals, discontinued, and fast movers"
+      >
         <div className="kpi-grid">
           <KpiCard label="New Arrivals" value={catalogSpyAlerts.filter((item) => String(item.type || '') === 'new_arrival').length} />
           <KpiCard label="Stock-Outs" value={catalogSpyAlerts.filter((item) => String(item.type || '') === 'stock_out').length} />
@@ -190,7 +194,7 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
           <KpiCard label="Fast Movers" value={fastMovers.length} />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        <div className="catalog-spy-content">
           <div className="list-wrap">
             {catalogSpyAlerts.length === 0 ? <p>No CatalogSpy alerts captured for the latest cycle.</p> : null}
             {catalogSpyAlerts.map((alert, idx) => (
@@ -203,35 +207,35 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
             ))}
           </div>
 
-          <div className="bg-card rounded-2xl p-4 border border-border">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-lg font-semibold">Fast Movers</h4>
-              <div className="text-sm text-muted-foreground">{fastMovers.length} items</div>
+          <div className="fast-movers-card">
+            <div className="fast-movers-head">
+              <h4>Fast Movers</h4>
+              <span>{fastMovers.length} items</span>
             </div>
             {fastMovers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No fast movers detected.</p>
+              <p className="muted-text">No fast movers detected.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[600px]">
+              <div className="fast-movers-table-wrap">
+                <table className="fast-movers-table">
                   <thead>
-                    <tr className="border-b border-border text-muted-foreground">
-                      <th className="pb-2 font-semibold">Product</th>
-                      <th className="pb-2 font-semibold">SKU</th>
-                      <th className="pb-2 font-semibold">Velocity</th>
-                      <th className="pb-2 font-semibold">Seen</th>
-                      <th className="pb-2 font-semibold">Last Seen</th>
+                    <tr>
+                      <th>Product</th>
+                      <th>SKU</th>
+                      <th>Velocity</th>
+                      <th>Seen</th>
+                      <th>Last Seen</th>
                     </tr>
                   </thead>
                   <tbody>
                     {fastMovers.map((fm: any, idx: number) => (
-                      <tr key={`${fm.retailer_sku || idx}-${idx}`} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
-                        <td className="py-2 pr-4">
-                          <div className="font-medium text-sm line-clamp-2">{String(fm.product_name || fm.name || fm.message || '-')}</div>
+                      <tr key={`${fm.retailer_sku || idx}-${idx}`}>
+                        <td className="fast-mover-product">
+                          <div>{String(fm.product_name || fm.name || fm.message || '-')}</div>
                         </td>
-                        <td className="py-2">{String(fm.retailer_sku || fm.sku || '-')}</td>
-                        <td className="py-2">{fm.velocity !== undefined ? String(fm.velocity) : '-'}</td>
-                        <td className="py-2">{Number(fm.times_seen || fm.times || 0)}</td>
-                        <td className="py-2 text-sm text-muted-foreground">{fm.last_seen ? new Date(fm.last_seen).toLocaleDateString() : '-'}</td>
+                        <td>{String(fm.retailer_sku || fm.sku || '-')}</td>
+                        <td>{fm.velocity !== undefined ? String(fm.velocity) : '-'}</td>
+                        <td>{Number(fm.times_seen || fm.times || 0)}</td>
+                        <td className="muted-text">{fm.last_seen ? new Date(fm.last_seen).toLocaleDateString() : '-'}</td>
                       </tr>
                     ))}
                   </tbody>
