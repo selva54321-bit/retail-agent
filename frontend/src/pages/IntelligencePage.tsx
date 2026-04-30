@@ -122,18 +122,6 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
     return Array.from(summary.entries()).map(([name, value]) => ({ name, value }));
   }, [forecasts]);
 
-  const competitorMix = useMemo(() => {
-    const summary = new Map<string, number>();
-    for (const item of catalogItems) {
-      const key = String(item.competitor_name || item.competitor || 'unknown');
-      summary.set(key, (summary.get(key) || 0) + 1);
-    }
-    return Array.from(summary.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 10);
-  }, [catalogItems]);
-
   const marketStrategyRows = useMemo(() => {
     const latestByCompetitor = new Map<string, Record<string, unknown>>();
     for (const item of marketItems) {
@@ -270,20 +258,6 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
               <YAxis />
               <Tooltip />
               <Bar dataKey="value" fill="#111827" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Panel>
-
-      <Panel title="Competitor Coverage" subtitle="Rows captured per competitor in catalog snapshots">
-        <div className="chart-wrap">
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={competitorMix}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={70} />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" fill="#374151" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
