@@ -285,6 +285,38 @@ export function IntelligencePage({ api, retailerId, refreshKey }: IntelligencePa
         </div>
       </Panel>
 
+      <Panel title="Demand Forecast Feed" subtitle="Predicted SKU demand signals based on price velocity and stock-outs">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Signal</th>
+                <th>Confidence</th>
+                <th>Recommendation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {forecasts.slice(0, 30).map((row, idx) => (
+                <tr key={`${String(row.catalog_sku || idx)}-${idx}`}>
+                  <td className="font-medium text-sm">{String(row.product_name || row.name || row.catalog_sku || '-')}</td>
+                  <td>
+                    <span className={`badge ${String(row.demand_signal || 'stable').toLowerCase()}`}>
+                      {String(row.demand_signal || 'stable')}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="text-xs text-muted-foreground uppercase">{String(row.confidence || 'low')}</span>
+                  </td>
+                  <td className="text-sm italic">{String(row.recommendation || '-')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {forecasts.length === 0 ? <p>No demand forecast rows found.</p> : null}
+        </div>
+      </Panel>
+
       <Panel title="Drop Pattern Feed" subtitle="Repeated competitor price-drop patterns from the Intel agent">
         <div className="table-wrap">
           <table>
