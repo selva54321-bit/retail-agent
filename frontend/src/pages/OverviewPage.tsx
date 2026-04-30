@@ -15,7 +15,7 @@ import {
 import { KpiCard } from '../components/KpiCard';
 import { Panel } from '../components/Panel';
 import { ApiClient } from '../lib/api';
-import { asDate, asPercent, safeArray } from '../lib/format';
+import { asDate, asPercent, cycleLabel, safeArray } from '../lib/format';
 import type { DashboardReportResponse } from '../types/api';
 
 interface OverviewPageProps {
@@ -127,7 +127,7 @@ export function OverviewPage({ api, retailerId, cycleId, onCycleChange, refreshK
               const id = String(cycle.cycle_id || '');
               return (
                 <option key={id} value={id}>
-                  {id}
+                  {cycleLabel(id, cycle.started_at)}
                 </option>
               );
             })}

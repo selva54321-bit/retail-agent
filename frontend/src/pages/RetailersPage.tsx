@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import * as XLSX from 'xlsx';
 
 import { Panel } from '../components/Panel';
 import { ApiClient } from '../lib/api';
@@ -37,6 +38,7 @@ export function RetailersPage({ api, retailerId, onRetailerChange, refreshKey }:
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setSelectedId(retailerId || 0);
@@ -122,6 +124,41 @@ export function RetailersPage({ api, retailerId, onRetailerChange, refreshKey }:
 
   function removeCatalogRow(index: number) {
     setProfile((prev) => ({ ...prev, catalog: prev.catalog.filter((_, idx) => idx !== index) }));
+  }
+
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet);
+
+      const newCatalogItems = rows.map((row) => {
+        const name = String(row.Name || row.name || row.Product || row.product_name || '');
+        const sku = String(row.SKU || row.sku || row.catalog_sku || '');
+        const currentPrice = Number(row['Current Price'] || row.current_price || row.Price || row.price || 0);
+        const cost = Number(row.Cost || row.cost || 0);
+
+        return { name, sku, current_price: currentPrice, cost };
+      }).filter((item) => item.name || item.sku);
+
+      if (newCatalogItems.length > 0) {
+        setProfile((prev) => ({
+          ...prev,
+          catalog: [...prev.catalog, ...newCatalogItems],
+        }));
+        setMessage(`Imported ${newCatalogItems.length} SKUs from ${file.name}. Remember to save!`);
+      } else {
+        setError('No valid rows found in the Excel file.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to parse Excel file');
+    }
+
+    event.target.value = '';
   }
 
   async function saveProfile() {
@@ -304,9 +341,21 @@ export function RetailersPage({ api, retailerId, onRetailerChange, refreshKey }:
 
         <div className="catalog-head">
           <h4>Catalog</h4>
-          <button type="button" onClick={addCatalogRow} className="secondary-btn">
-            + Add SKU
-          </button>
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              accept=".xlsx, .xls, .csv"
+              style={{ display: 'none' }}
+              ref={fileInputRef}
+              onChange={(e) => void handleFileUpload(e)}
+            />
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="secondary-btn">
+              Upload XLSX
+            </button>
+            <button type="button" onClick={addCatalogRow} className="secondary-btn">
+              + Add SKU
+            </button>
+          </div>
         </div>
 
         <div className="table-wrap">

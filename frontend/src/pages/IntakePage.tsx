@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
+import * as XLSX from 'xlsx';
 
 import { Panel } from '../components/Panel';
 import { ApiClient } from '../lib/api';
@@ -25,12 +26,12 @@ const DEFAULT_PROFILE: RetailerProfilePayload = {
   scan_frequency: 'daily',
   onboarding_complete: true,
   catalog: [
-    {
-      name: 'LG 81.28 cm 32 inch Full HD LED Smart WebOS TV',
-      sku: '32LQ570BPSA',
-      current_price: 17912,
-      cost: 14375,
-    },
+    // {
+    //   name: 'LG 81.28 cm 32 inch Full HD LED Smart WebOS TV',
+    //   sku: '32LQ570BPSA',
+    //   current_price: 17912,
+    //   cost: 14375,
+    // },
   ],
 };
 
@@ -44,6 +45,8 @@ export function IntakePage({ api, retailerId, onCycleCreated }: IntakePageProps)
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RunCycleResponse | null>(null);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const competitorText = useMemo(() => profile.known_competitors.join(', '), [profile.known_competitors]);
   const subcategoryText = useMemo(() => profile.subcategories.join(', '), [profile.subcategories]);
@@ -78,6 +81,41 @@ export function IntakePage({ api, retailerId, onCycleCreated }: IntakePageProps)
       ...prev,
       catalog: prev.catalog.filter((_, idx) => idx !== index),
     }));
+  }
+
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet);
+
+      const newCatalogItems = rows.map((row) => {
+        const name = String(row.Name || row.name || row.Product || row.product_name || '');
+        const sku = String(row.SKU || row.sku || row.catalog_sku || '');
+        const currentPrice = Number(row['Current Price'] || row.current_price || row.Price || row.price || 0);
+        const cost = Number(row.Cost || row.cost || 0);
+
+        return { name, sku, current_price: currentPrice, cost };
+      }).filter((item) => item.name || item.sku);
+
+      if (newCatalogItems.length > 0) {
+        setProfile((prev) => ({
+          ...prev,
+          catalog: [...prev.catalog, ...newCatalogItems],
+        }));
+        setMessage(`Imported ${newCatalogItems.length} SKUs from ${file.name}.`);
+      } else {
+        setError('No valid rows found in the Excel file.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to parse Excel file');
+    }
+
+    event.target.value = '';
   }
 
   async function submitFormIntake() {
@@ -164,6 +202,7 @@ export function IntakePage({ api, retailerId, onCycleCreated }: IntakePageProps)
 
       {mode === 'form' ? (
         <Panel title="Form Intake + Run" subtitle="Structured onboarding with direct fields">
+          {message ? <p className="success-text">{message}</p> : null}
           <div className="form-grid">
             <label>
               Store Name
@@ -276,9 +315,21 @@ export function IntakePage({ api, retailerId, onCycleCreated }: IntakePageProps)
 
           <div className="catalog-head">
             <h4>Catalog</h4>
-            <button type="button" onClick={addCatalogRow} className="secondary-btn">
-              + Add SKU
-            </button>
+            <div className="flex items-center gap-2">
+              <input
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                style={{ display: 'none' }}
+                ref={fileInputRef}
+                onChange={(e) => void handleFileUpload(e)}
+              />
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="secondary-btn">
+                Upload XLSX
+              </button>
+              <button type="button" onClick={addCatalogRow} className="secondary-btn">
+                + Add SKU
+              </button>
+            </div>
           </div>
           <div className="table-wrap">
             <table>

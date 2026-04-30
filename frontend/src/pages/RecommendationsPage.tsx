@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { Panel } from '../components/Panel';
 import { ApiClient } from '../lib/api';
-import { asCurrency, asPercent, asDate } from '../lib/format';
+import { asCurrency, asPercent, asDate, cycleLabel } from '../lib/format';
 import type { Recommendation } from '../types/api';
 
 interface RecommendationsPageProps {
@@ -26,11 +26,20 @@ export function RecommendationsPage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resultMessage, setResultMessage] = useState('');
+  const [cycles, setCycles] = useState<Array<Record<string, unknown>>>([]);
 
   const availableCycles = useMemo(
     () => Array.from(new Set(recommendations.map((r) => r.cycle_id))).filter(Boolean),
     [recommendations],
   );
+
+  const cycleStartedAt = useMemo(() => {
+    const byId = new Map<string, unknown>();
+    for (const cycle of cycles) {
+      byId.set(String(cycle.cycle_id || ''), cycle.started_at);
+    }
+    return byId;
+  }, [cycles]);
 
   const activeCycle = cycleId || availableCycles[0] || '';
 
@@ -51,8 +60,10 @@ export function RecommendationsPage({
       setError('');
       try {
         const res = await api.getRecommendations(retailerId, pendingOnly, 200);
+        const cycleRes = await api.getCycles(retailerId, 200);
         if (cancelled) return;
         setRecommendations(res.recommendations || []);
+        setCycles(cycleRes.cycles || []);
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'Failed to load recommendations');
@@ -121,7 +132,7 @@ export function RecommendationsPage({
               <option value="">All cycles</option>
               {availableCycles.map((id) => (
                 <option key={id} value={id}>
-                  {id}
+                  {cycleLabel(id, cycleStartedAt.get(id))}
                 </option>
               ))}
             </select>
@@ -164,7 +175,7 @@ export function RecommendationsPage({
                       }
                     />
                   </td>
-                  <td>{row.cycle_id}</td>
+                  <td>{cycleLabel(row.cycle_id, cycleStartedAt.get(row.cycle_id))}</td>
                   <td>{row.retailer_sku}</td>
                   <td>{row.product_name}</td>
                   <td>{asCurrency(row.current_price)}</td>

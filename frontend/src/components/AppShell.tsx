@@ -1,4 +1,5 @@
 import type { PropsWithChildren } from 'react';
+import { asDate } from '../lib/format';
 
 export type ViewKey =
   | 'overview'
@@ -18,6 +19,7 @@ interface AppShellProps extends PropsWithChildren {
   retailerId: number;
   onChangeRetailerId: (value: number) => void;
   cycleId: string;
+  cycleStartedAt?: unknown;
   onChangeCycleId: (value: string) => void;
   onRefresh: () => void;
 }
@@ -41,6 +43,7 @@ export function AppShell({
   retailerId,
   onChangeRetailerId,
   cycleId,
+  cycleStartedAt,
   onChangeCycleId,
   onRefresh,
   children,
@@ -98,6 +101,7 @@ export function AppShell({
               onChange={(event) => onChangeCycleId(event.target.value)}
               placeholder="cycle-..."
             />
+            {cycleId && cycleStartedAt ? <small>Started {asDate(cycleStartedAt)}</small> : null}
           </label>
 
           <button type="button" className="secondary-btn" onClick={onRefresh}>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Panel } from '../components/Panel';
 import { ApiClient } from '../lib/api';
-import { asDate } from '../lib/format';
+import { asDate, cycleLabel } from '../lib/format';
 import type { RunCycleResponse } from '../types/api';
 
 interface CyclesPageProps {
@@ -107,7 +107,7 @@ export function CyclesPage({ api, retailerId, onCycleCreated, onCycleChange }: C
             <tbody>
               {cycles.map((cycle) => (
                 <tr key={String(cycle.cycle_id || Math.random())}>
-                  <td>{String(cycle.cycle_id || '')}</td>
+                  <td>{cycleLabel(cycle.cycle_id, cycle.started_at)}</td>
                   <td>{String(cycle.status || '-')}</td>
                   <td>{asDate(cycle.started_at)}</td>
                   <td>{Number(cycle.records_scraped || 0)}</td>

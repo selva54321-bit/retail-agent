@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 
 import { AppShell, type ViewKey } from './components/AppShell';
 import { ApiClient, defaultApiBase } from './lib/api';
@@ -18,8 +18,39 @@ function App() {
   const [retailerId, setRetailerId] = useState(1);
   const [cycleId, setCycleId] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [cycles, setCycles] = useState<Array<Record<string, unknown>>>([]);
 
   const api = useMemo(() => new ApiClient(apiBase), [apiBase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCycles() {
+      if (retailerId <= 0) {
+        setCycles([]);
+        return;
+      }
+      try {
+        const res = await api.getCycles(retailerId, 200);
+        if (!cancelled) {
+          setCycles(res.cycles || []);
+        }
+      } catch {
+        if (!cancelled) {
+          setCycles([]);
+        }
+      }
+    }
+
+    void loadCycles();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, retailerId, refreshKey]);
+
+  const cycleStartedAt = useMemo(() => {
+    const match = cycles.find((cycle) => String(cycle.cycle_id || '') === cycleId);
+    return match?.started_at;
+  }, [cycles, cycleId]);
 
   function triggerRefresh() {
     setRefreshKey((prev) => prev + 1);
@@ -105,6 +136,7 @@ function App() {
       retailerId={retailerId}
       onChangeRetailerId={handleRetailerChange}
       cycleId={cycleId}
+      cycleStartedAt={cycleStartedAt}
       onChangeCycleId={setCycleId}
       onRefresh={triggerRefresh}
     >

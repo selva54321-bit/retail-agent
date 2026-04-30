@@ -18,6 +18,13 @@ export function asDate(value: unknown): string {
   return raw.slice(0, 19);
 }
 
+export function cycleLabel(cycleId: unknown, startedAt?: unknown): string {
+  const id = String(cycleId || '');
+  if (!id) return '-';
+  const started = asDate(startedAt);
+  return started === '-' ? id : `${id} (${started})`;
+}
+
 export function parseCompetitorPrices(value: unknown): Record<string, number> {
   if (!value) return {};
   if (typeof value === 'object') return value as Record<string, number>;
