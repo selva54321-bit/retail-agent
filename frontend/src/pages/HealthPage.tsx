@@ -10,6 +10,8 @@ interface HealthPageProps {
   refreshKey: number;
 }
 
+
+
 export function HealthPage({ api, refreshKey }: HealthPageProps) {
   const [live, setLive] = useState<HealthResponse | null>(null);
   const [ready, setReady] = useState<HealthResponse | null>(null);
