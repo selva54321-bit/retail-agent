@@ -52,9 +52,8 @@ export function AppShell({
     <div className="app-shell">
       <aside className="sidebar fade-in">
         <div className="brand">
-          <p className="brand-kicker">RetailAgent</p>
-          <h1>Market Command</h1>
-          <p className="brand-text">White / black / gray control room for every backend route.</p>
+          <h1>RetailSpy</h1>
+          <p className="brand-text">An Agentic spy for your company</p>
         </div>
 
         <nav className="nav-list">
