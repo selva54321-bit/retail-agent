@@ -60,6 +60,8 @@ def build_scraper_subgraph():
     graph.add_node("fetcher",   run_fetcher)
     graph.add_node("extractor", run_extractor)
 
+
+
     # Edges
     graph.add_edge(START, "navigator")
 

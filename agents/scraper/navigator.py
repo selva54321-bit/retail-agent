@@ -7,6 +7,7 @@ Opens the site in a HEADED browser, finds the search box using the
 Playwright Locator API, types the product name, submits, waits for
 the results page to fully render, then returns the HTML.
 
+
 Flow:
   1. goto(base_url)                   — open homepage
   2. _find_search_box()               — returns a Locator (not ElementHandle)

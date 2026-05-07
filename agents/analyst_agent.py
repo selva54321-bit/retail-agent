@@ -140,6 +140,7 @@ def _alert_builder(payload: dict) -> dict:
                 "severity": "high", "at": now,
             })
 
+
         if data["price_gap_pct_to_min"] > threshold and data["price_rank"] > 1:
             cheapest = min(data["competitor_prices"], key=data["competitor_prices"].get)
             pct      = data["price_gap_pct_to_min"] * 100
