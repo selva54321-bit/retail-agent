@@ -13,7 +13,7 @@ Usage:
     python main.py --provider ollama
     python main.py --provider grok
 
-Set model names and API keys in core/llm.py (_config block).
+Set API keys in .env. Model names live in core/llm.py (_config block).
 """
 
 import sys
@@ -57,7 +57,7 @@ def select_provider(args) -> None:
     print(f"  │   2 → Ollama  (model: {ollama_model:<29}│")
     print(f"  │   3 → Grok    (model: {grok_model:<29}│")
     print("  │                                                      │")
-    print("  │   Edit core/llm.py to change model names / keys     │")
+    print("  │   Set API keys in .env; models live in core/llm.py  │")
     print("  └──────────────────────────────────────────────────────┘")
 
     while True:
@@ -126,7 +126,7 @@ def check_status():
     for p in profiles:
         print(f"    [{p['id']}] {p['store_name']}")
 
-    print("\n  Edit core/llm.py _config to change any model or key.")
+    print("\n  Set API keys in .env. Edit core/llm.py _config to change model names.")
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
+from dotenv import load_dotenv
 from pymongo import ASCENDING, DESCENDING, MongoClient, UpdateOne
 from pymongo.collection import Collection
 from pymongo.database import Database
@@ -21,6 +22,8 @@ from pymongo.errors import PyMongoError
 from pymongo.results import UpdateResult
 from pymongo import ReturnDocument
 import pymongo
+
+load_dotenv()
 
 
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")

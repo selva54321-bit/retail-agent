@@ -22,11 +22,14 @@ import hashlib
 import os
 import time
 import requests
+from dotenv import load_dotenv
 from pydantic import BaseModel
 from langchain_core.output_parsers  import JsonOutputParser, StrOutputParser
 from langchain_core.prompts         import ChatPromptTemplate
 from langchain_core.language_models import BaseChatModel
 from langchain_core.embeddings      import Embeddings
+
+load_dotenv()
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -40,7 +43,7 @@ _config: dict = {
     "provider": "gemini",
 
     # ── Gemini ────────────────────────────────────────────────────
-    "gemini_api_key": os.environ.get("GOOGLE_API_KEY", "AIzaSyBcSFLrsFiW7KWbau4HoiTui-QEmOFrVG8"),
+    "gemini_api_key": os.environ.get("GOOGLE_API_KEY", ""),
     "gemini_model":   "gemini-2.5-flash-lite",
 
     # ── Ollama (local) ────────────────────────────────────────────
