@@ -8,41 +8,7 @@
 ## 🚀 Overview
 RetailAgent is an autonomous, multi-agent AI framework designed for enterprise-grade competitor monitoring and pricing strategy. It operates as a state-aware reasoning engine that identifies competitors, stabilizes its own browser sessions, matches products via AI embeddings, and detects long-term market trends.
 
-```mermaid
-graph TD
-    START((Start Cycle)) --> INTAKE{Profile Exists?}
-    
-    INTAKE -- No --> ONBOARD[Intake Agent: Onboarding]
-    ONBOARD --> PLANNER
-    INTAKE -- Yes --> PLANNER[Planner Agent: Mission Design]
-    
-    PLANNER --> SCOUT[Scout Agent: Regional Discovery]
-    
-    subgraph SCRAPER [Scraper Sub-Agent: Parallel Execution]
-        QUEUE[Target Queue] --> WORKERS{ThreadPoolExecutor}
-        WORKERS --> T1[Amazon]
-        WORKERS --> T2[Flipkart]
-        WORKERS --> T3[Croma/Local]
-        
-        subgraph ENGINE [Internal Scraper Engine]
-            direction LR
-            NAV[Navigator] --> FETCH[Fetcher] --> EXTRACT[Extractor]
-        end
-        
-        T1 -.-> ENGINE
-        T2 -.-> ENGINE
-        T3 -.-> ENGINE
-    end
-    
-    SCRAPER --> NORM[Normalizer Agent: SKU Matching]
-    NORM --> ANALYST[Analyst Agent: Price Anomalies]
-    ANALYST --> SPY[Catalog Spy: Inventory Intelligence]
-    SPY --> INTEL[Intel Agent: Pattern Prediction]
-    INTEL --> PRICING[Pricing Agent: Recommendation]
-    
-    PRICING --> REPORT[Reporter Agent: Executive Briefing]
-    REPORT --> LOG((End Cycle / Log))
-```
+![RetailSpy Agentic AI Workflow](assets/retailspy-agentic-ai-workflow.png)
 
 ## 🛠️ Stabilized Core Architecture
 The system is hardened for high-scale retail operations:
