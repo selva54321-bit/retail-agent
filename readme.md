@@ -1,4 +1,4 @@
-# RetailAgent — LangChain + LangGraph Market Intelligence
+# RetailAgent — LangChain + LangGraph Market Intelligence 
 
 [![LangChain](https://img.shields.io/badge/LangChain-latest-blue)](https://github.com/langchain-ai/langchain)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Stateful-green)](https://github.com/langchain-ai/langgraph)
